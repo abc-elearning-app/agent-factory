@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Repo Is
 
-**Agent Builder** is a standalone AI workflow tool — a single markdown workflow file (`agent-build.md`) that can be installed into any project. When invoked via `/agent-build "<description>"`, it auto-generates an AI agent definition file, runs it immediately, and refines it through a feedback loop.
+**Agent Factory** is a standalone AI workflow tool — a single markdown workflow file (`agent-factory.md`) that can be installed into any project. When invoked via `/agent-factory "<description>"`, it auto-generates an AI agent definition file, runs it immediately, and refines it through a feedback loop.
 
 There is no build system, package manager, or test runner. The "code" is markdown-based workflow instructions.
 
@@ -22,17 +22,17 @@ There is no build system, package manager, or test runner. The "code" is markdow
 After installation, invoke in any AI IDE that supports workflows:
 
 ```
-/agent-build "thu thập tiêu đề bài viết từ VnExpress"
-/agent-build "review Python code for security issues"
-/agent-build "analyze data from a CSV file"
+/agent-factory "thu thập tiêu đề bài viết từ VnExpress"
+/agent-factory "review Python code for security issues"
+/agent-factory "analyze data from a CSV file"
 ```
 
 ## Key Files
 
-- `agent-build.md` — The main workflow definition (source of truth). Also symlinked/copied to `.agent/workflows/agent-build.md`.
+- `agent-factory.md` — The main workflow definition (source of truth). Also symlinked/copied to `.agent/workflows/agent-factory.md`.
 - `install.sh` — Copies the workflow into a target project.
 - `examples/` — Three reference agent files: `web-scraper.md`, `code-reviewer.md`, `data-analyzer.md`.
-- `agent-builder-claude/` — Phase 1 Claude Code-specific builder (command + subagent + templates + validator).
+- `agent-factory-claude/` — Phase 1 Claude Code-specific builder (command + subagent + templates + validator).
 
 ## Agent File Format
 
@@ -56,7 +56,7 @@ Generated agents are saved to the first detected directory: `./agents/` → `.cl
 
 ## Architecture: The Workflow Pipeline
 
-The `agent-build.md` workflow runs these steps:
+The `agent-factory.md` workflow runs these steps:
 
 1. **Preflight** — Validate description, detect/create agent directory.
 2. **Clarification** (conditional) — Ask ≤3 questions if description < 20 words and lacks input source, output format, or task scope.
@@ -82,9 +82,9 @@ The `agent-build.md` workflow runs these steps:
 
 ## Editing the Workflow
 
-The canonical source is `agent-build.md` in the repo root. The copy at `.agent/workflows/agent-build.md` is kept in sync — if you edit one, update the other (or re-run `install.sh`).
+The canonical source is `agent-factory.md` in the repo root. The copy at `.agent/workflows/agent-factory.md` is kept in sync — if you edit one, update the other (or re-run `install.sh`).
 
-When modifying the workflow logic in `agent-build.md`, keep these constraints:
+When modifying the workflow logic in `agent-factory.md`, keep these constraints:
 - Clarification step: max 3 questions total
 - Type detection: max 1 additional fallback question
 - Refinement loop: suggest restart at iteration 5, hard stop at iteration 10

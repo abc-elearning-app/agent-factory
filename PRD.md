@@ -1,12 +1,12 @@
 ---
-name: agent-builder
+name: agent-factory
 description: Meta-agent đa nền tảng (Claude Code, Gemini CLI, Antigravity) tự động sinh, test, và cải tiến agents từ yêu cầu ngôn ngữ tự nhiên — với 3 bản native riêng cho từng platform
 status: backlog
 priority: P0
 created: 2026-02-27T10:26:34Z
 ---
 
-# PRD: agent-builder
+# PRD: agent-factory
 
 ## Executive Summary
 
@@ -69,7 +69,7 @@ Người mới bắt đầu với các AI coding agent platforms (Claude Code, G
 As Minh (developer mới), I want to mô tả bằng tiếng Việt điều tôi muốn command làm so that tôi nhận được một Claude Code slash command hoạt động mà không cần hiểu YAML frontmatter.
 
 Acceptance Criteria:
-- [ ] Chạy `/agent-builder` trong Claude Code → được hỏi mô tả yêu cầu bằng tiếng Việt
+- [ ] Chạy `/agent-factory` trong Claude Code → được hỏi mô tả yêu cầu bằng tiếng Việt
 - [ ] Agent hỏi tối đa 3-5 câu clarification, thân thiện, không dùng thuật ngữ kỹ thuật trừ khi cần
 - [ ] Output là file `.md` đúng format Claude Code slash command (valid YAML frontmatter: `description`, `argument-hint`, `allowed-tools`; body dùng `$ARGUMENTS` syntax)
 - [ ] Command được install vào `.claude/commands/` và chạy được ngay bằng `/command-name`
@@ -79,7 +79,7 @@ Acceptance Criteria:
 As Lan (developer Gemini CLI), I want to mô tả yêu cầu bằng tiếng Việt so that tôi nhận được một Gemini CLI custom command đúng format TOML hoạt động ngay.
 
 Acceptance Criteria:
-- [ ] Chạy `/agent-builder` trong Gemini CLI → được hỏi mô tả yêu cầu
+- [ ] Chạy `/agent-factory` trong Gemini CLI → được hỏi mô tả yêu cầu
 - [ ] Output là file `.toml` đúng format Gemini CLI custom command (valid TOML: `description`, `prompt` field, `!{...}` shell injection nếu cần)
 - [ ] File được tạo tại `.gemini/commands/` và chạy được bằng `/command-name`
 - [ ] Nếu cần subagent → output là `.md` trong `.gemini/agents/` đúng format Gemini subagent
@@ -344,10 +344,10 @@ User mô tả yêu cầu (tiếng Việt)
 
 ### Claude Code Version
 ```
-agent-builder-claude/
+agent-factory-claude/
 ├── .claude/
 │   ├── commands/
-│   │   └── agent-builder.md           # /agent-builder entry point
+│   │   └── agent-factory.md           # /agent-factory entry point
 │   └── agents/
 │       └── builder-engine.md          # Core subagent (optional)
 ├── templates/
@@ -365,10 +365,10 @@ agent-builder-claude/
 
 ### Gemini CLI Version
 ```
-agent-builder-gemini/
+agent-factory-gemini/
 ├── .gemini/
 │   ├── commands/
-│   │   └── agent-builder.toml         # /agent-builder entry point
+│   │   └── agent-factory.toml         # /agent-factory entry point
 │   └── agents/
 │       └── builder-engine.md
 ├── templates/
@@ -386,12 +386,12 @@ agent-builder-gemini/
 
 ### Antigravity Version
 ```
-agent-builder-antigravity/
+agent-factory-antigravity/
 ├── .agent/
 │   ├── workflows/
-│   │   └── agent-builder.md           # Workflow entry point
+│   │   └── agent-factory.md           # Workflow entry point
 │   └── skills/
-│       └── agent-builder/
+│       └── agent-factory/
 │           └── SKILL.md               # Skill-based entry (alternative)
 ├── .antigravity/
 │   └── rules/

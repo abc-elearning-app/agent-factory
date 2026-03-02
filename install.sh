@@ -1,51 +1,51 @@
 #!/bin/bash
-# Agent Builder — Install Script
-# Copy agent-build workflow vào project hiện tại
+# Agent Factory — Install Script
+# Copy agent-factory workflow vào project hiện tại
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORKFLOW_FILE="$SCRIPT_DIR/agent-build.md"
-TOML_FILE="$SCRIPT_DIR/.gemini/commands/agent-build.toml"
+WORKFLOW_FILE="$SCRIPT_DIR/agent-factory.md"
+TOML_FILE="$SCRIPT_DIR/.gemini/commands/agent-factory.toml"
 
 # Check if workflow file exists
 if [ ! -f "$WORKFLOW_FILE" ]; then
-    echo "❌ agent-build.md not found at $SCRIPT_DIR"
-    echo "   Make sure you're running this script from the agent-builder directory."
+    echo "❌ agent-factory.md not found at $SCRIPT_DIR"
+    echo "   Make sure you're running this script from the agent-factory directory."
     exit 1
 fi
 
 # ── Claude Code (.claude/commands/) ──────────────────────────────────────────
 mkdir -p ".claude/commands"
-cp "$WORKFLOW_FILE" ".claude/commands/agent-build.md"
-echo "✅ Claude Code: .claude/commands/agent-build.md"
+cp "$WORKFLOW_FILE" ".claude/commands/agent-factory.md"
+echo "✅ Claude Code: .claude/commands/agent-factory.md"
 
 # ── Gemini CLI (.gemini/commands/) ───────────────────────────────────────────
 mkdir -p ".gemini/commands"
-cp "$WORKFLOW_FILE" ".gemini/commands/agent-build.md"
+cp "$WORKFLOW_FILE" ".gemini/commands/agent-factory.md"
 if [ -f "$TOML_FILE" ]; then
-    cp "$TOML_FILE" ".gemini/commands/agent-build.toml"
-    echo "✅ Gemini CLI:  .gemini/commands/agent-build.toml"
+    cp "$TOML_FILE" ".gemini/commands/agent-factory.toml"
+    echo "✅ Gemini CLI:  .gemini/commands/agent-factory.toml"
 else
     # Generate TOML on the fly if source doesn't exist
-    cat > ".gemini/commands/agent-build.toml" <<'EOF'
+    cat > ".gemini/commands/agent-factory.toml" <<'EOF'
 description = "Auto-generate an AI agent from a natural language description, run it immediately, and refine through a feedback loop"
 
 prompt = """
-@{agent-build.md}
+@{agent-factory.md}
 
 ---
 
 User description: {{args}}
 """
 EOF
-    echo "✅ Gemini CLI:  .gemini/commands/agent-build.toml (generated)"
+    echo "✅ Gemini CLI:  .gemini/commands/agent-factory.toml (generated)"
 fi
 
 # ── Antigravity / generic (.agent/workflows/) ─────────────────────────────────
 mkdir -p ".agent/workflows"
-cp "$WORKFLOW_FILE" ".agent/workflows/agent-build.md"
-echo "✅ Antigravity:  .agent/workflows/agent-build.md"
+cp "$WORKFLOW_FILE" ".agent/workflows/agent-factory.md"
+echo "✅ Antigravity:  .agent/workflows/agent-factory.md"
 
 # ── Copy examples if they exist ───────────────────────────────────────────────
 if [ -d "$SCRIPT_DIR/examples" ]; then
@@ -68,13 +68,13 @@ if [ -d "$SCRIPT_DIR/examples" ]; then
 fi
 
 echo ""
-echo "✅ Agent Builder installed for all supported IDEs!"
+echo "✅ Agent Factory installed for all supported IDEs!"
 echo ""
 echo "📖 Usage:"
-echo "   Claude Code:  /agent-build \"mô tả agent của bạn\""
-echo "   Gemini CLI:   /agent-build \"mô tả agent của bạn\""
-echo "   Antigravity:  @[/agent-build] \"mô tả agent của bạn\""
+echo "   Claude Code:  /agent-factory \"mô tả agent của bạn\""
+echo "   Gemini CLI:   /agent-factory \"mô tả agent của bạn\""
+echo "   Antigravity:  @[/agent-factory] \"mô tả agent của bạn\""
 echo ""
 echo "📚 Examples:"
-echo '   /agent-build "thu thập tiêu đề bài viết từ một trang web"'
-echo '   /agent-build "review code Python và đưa ra gợi ý"'
+echo '   /agent-factory "thu thập tiêu đề bài viết từ một trang web"'
+echo '   /agent-factory "review code Python và đưa ra gợi ý"'
