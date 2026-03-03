@@ -19,32 +19,58 @@ cp agent-factory.md .agent/workflows/
 
 ### 2. Sử dụng
 
-**Claude Code:**
+3 lệnh chính — dùng trên Claude Code, Gemini CLI, hoặc Antigravity:
+
+| Lệnh | Mục đích |
+|------|----------|
+| `/agent-factory "..."` | Tạo agent mới từ mô tả |
+| `/agent-shared` | Duyệt, cài và đẩy agent lên kho chung |
+| `/run-agent` | Chạy nhanh agent đã có trên máy |
+
+#### `/agent-factory` — Tạo agent mới
+
 ```
 /agent-factory "thu thập tiêu đề và URL bài viết từ một trang web"
 /agent-factory "review code Python và đưa ra gợi ý cải thiện"
 /agent-factory "tổng hợp các key points từ một tài liệu dài"
 ```
 
-**Gemini CLI:**
-```
-/agent-factory "thu thập tiêu đề và URL bài viết từ một trang web"
-```
-
-**Antigravity:**
-```
-@[/agent-factory] "thu thập tiêu đề và URL bài viết từ một trang web"
-```
-
-### 3. Kết quả
-
 Tool sẽ:
 1. 🔍 Phân tích mô tả → xác định loại agent
 2. 🏗️ Generate agent definition (YAML + system prompt)
 3. 🚀 Chạy agent ngay lập tức
 4. 🔄 Hỏi feedback → cải tiến → chạy lại (refinement loop)
+5. 📤 Hỏi có muốn share lên kho chung không
 
 Agent file được lưu tại `./agents/<name>.md` — sẵn sàng dùng lại.
+
+#### `/agent-shared` — Kho agent dùng chung
+
+Menu-driven, chọn số để thao tác:
+
+```
+1. 📂 Browse  — Xem agents theo nhóm (dev, qa, ops, data, content, marketing, general)
+2. 📥 Install — Cài agent vào project hiện tại
+3. 🔍 Search  — Tìm agent theo từ khoá
+4. 📤 Push    — Đẩy agent của bạn lên kho chung (tạo PR tự động)
+```
+
+Kho chung: [`abc-elearning-app/agents-shared`](https://github.com/abc-elearning-app/agents-shared). Auto-clone lần đầu, silent pull mỗi lần mở.
+
+#### `/run-agent` — Chạy agent nhanh
+
+Liệt kê agents trên máy, filter theo từ khoá, chọn số, nhập task và spawn ngay:
+
+```
+🤖 Agents trên máy — .claude/agents/ (12 agents)
+
+#    Type  Name                    Description
+1.   🟢    hanoi-weather-forecast  Thu thập dự báo thời tiết Hà Nội
+2.   🔴    code-analyzer           Phân tích code changes tìm bugs
+...
+
+Gõ số để chọn, hoặc tìm kiếm: ___
+```
 
 ## Agent Types
 

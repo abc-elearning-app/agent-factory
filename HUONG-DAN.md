@@ -16,9 +16,10 @@ Nhờ dev chạy 1 lần trong thư mục project:
 ./install.sh
 ```
 
-Sau khi cài xong, bạn sẽ dùng được 2 lệnh:
+Sau khi cài xong, bạn sẽ dùng được 3 lệnh:
 - `/agent-factory` — Tạo agent mới
-- `/agent-shared` — Duyệt và cài agent từ kho chung
+- `/agent-shared` — Duyệt, cài và đẩy agent lên kho chung
+- `/run-agent` — Chạy agent đã có trên máy
 
 ---
 
@@ -104,8 +105,9 @@ AI hiện menu, bạn chỉ cần chọn số.
 1. 📂 Browse  — Xem agents theo nhóm
 2. 📥 Install — Cài agent vào project
 3. 🔍 Search  — Tìm agent theo từ khoá
+4. 📤 Push    — Đẩy agent của bạn lên kho chung
 
-Chọn (1-3): ___
+Chọn (1-4): ___
 ```
 
 ### Browse (xem theo nhóm)
@@ -137,6 +139,89 @@ Nếu agent đã có trong project, AI sẽ hỏi ghi đè hay bỏ qua. Sau khi
 Chọn **3** → nhập từ khoá → AI tìm trong tất cả agents (tên, mô tả, tags, nội dung).
 
 Ví dụ: gõ "scraping" → AI tìm tất cả agents liên quan đến scraping.
+
+### Push (đẩy agent lên kho chung)
+
+Chọn **4** → AI liệt kê tất cả agents đang có trên máy bạn:
+
+```
+📤 Agents trên máy của bạn:
+
+#  Name                    Description
+1. hanoi-weather-forecast  Thu thập dự báo thời tiết Hà Nội
+2. code-analyzer           Phân tích code changes tìm bugs
+0. ← Quay lại menu
+
+Chọn agent để push (số, hoặc "all" để chọn tất cả): ___
+```
+
+Sau khi chọn agent:
+1. AI tự detect nhóm phù hợp từ `field` của agent (bạn chỉ cần xác nhận hoặc đổi)
+2. AI tạo branch `add/<tên-agent>` trong kho chung
+3. AI tạo Pull Request tự động
+4. Bạn nhận link PR — sau khi được duyệt, agent sẽ available cho toàn team
+
+**Bạn không cần biết git** — AI xử lý hoàn toàn.
+
+> **Lưu ý:** Không thể push thẳng lên `main`. Mọi agent đều phải qua Pull Request để đảm bảo chất lượng.
+
+---
+
+## Lệnh 3: Chạy agent nhanh (`/run-agent`)
+
+### Cách dùng
+
+```
+/run-agent
+```
+
+AI hiện danh sách tất cả agents đang có trên máy, bạn chọn số để chạy.
+
+### Ví dụ
+
+```
+🤖 Agents trên máy — .claude/agents/ (12 agents)
+
+#    Type  Name                               Description
+1.   🟢    ai-cli-launcher                    Tạo shell script macOS mở Terminal
+2.   🔴    code-analyzer                      Phân tích code changes tìm bugs
+3.   🟢    geo-blog-post-optimizer            Rewrites blog posts tối ưu AI citations
+...
+
+Gõ số để chọn, hoặc tìm kiếm: ___
+```
+
+### Tìm kiếm agent
+
+Không nhớ số? Gõ từ khoá để lọc:
+
+```
+Gõ số để chọn, hoặc tìm kiếm: weather
+
+🔍 Kết quả cho "weather" — 1 agent:
+
+#   Type  Name                    Description
+1.  🟢    hanoi-weather-forecast  Thu thập dự báo thời tiết Hà Nội
+
+Gõ số để chọn, hoặc tìm lại: ___
+```
+
+### Nhập task
+
+Sau khi chọn agent, bạn có thể:
+- **Nhấn Enter** → chạy với task mặc định (description của agent)
+- **Gõ task cụ thể** → ví dụ: "thời tiết ngày 05/03/2026"
+
+```
+🤖 hanoi-weather-forecast
+Mô tả: Thu thập dự báo thời tiết Hà Nội cho ngày mai từ Google Search
+Loại:  🟢 Implementation
+Tools: Read, Glob, Grep, WebSearch, WebFetch
+
+Bạn muốn làm gì? (Enter để dùng mặc định): thời tiết ngày 05/03/2026
+```
+
+Sau khi agent chạy xong, AI hỏi bạn muốn chạy tiếp, chạy lại, hay thoát.
 
 ---
 
@@ -185,8 +270,8 @@ Agent Factory dùng hệ thống 3 tầng an toàn:
 
 Cả 3 IDE đều hỗ trợ:
 
-| IDE | Lệnh tạo agent | Lệnh duyệt kho |
-|-----|-----------------|-----------------|
-| Claude Code | `/agent-factory "..."` | `/agent-shared` |
-| Gemini CLI | `/agent-factory "..."` | `/agent-shared` |
-| Antigravity | `@[/agent-factory] "..."` | `@[/agent-shared]` |
+| IDE | Tạo agent | Duyệt kho | Chạy agent |
+|-----|-----------|-----------|------------|
+| Claude Code | `/agent-factory "..."` | `/agent-shared` | `/run-agent` |
+| Gemini CLI | `/agent-factory "..."` | `/agent-shared` | `/run-agent` |
+| Antigravity | `@[/agent-factory] "..."` | `@[/agent-shared]` | `@[/run-agent]` |
