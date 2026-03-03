@@ -29,10 +29,13 @@ After installation, invoke in any AI IDE that supports workflows:
 
 ## Key Files
 
-- `agent-factory.md` — The main workflow definition (source of truth). Also symlinked/copied to `.agent/workflows/agent-factory.md`.
-- `install.sh` — Copies the workflow into a target project.
+- `agent-factory.md` — The main workflow definition (source of truth). Symlinked from `.gemini/commands/` and `.agent/workflows/` within this repo.
+- `agent-shared.md` — Companion workflow for browsing/installing agents from a shared team repository. Installed alongside `agent-factory.md`.
+- `install.sh` — Copies both workflows into a target project (uses `cp`, not symlinks, for installed targets).
+- `new-project.sh` — Creates a project workspace: `projects/<name>/` folder + dedicated `project/<name>` branch. Each project lives on its own branch; `projects/` is gitignored on `main`.
 - `examples/` — Three reference agent files: `web-scraper.md`, `code-reviewer.md`, `data-analyzer.md`.
-- `agent-factory-claude/` — Phase 1 Claude Code-specific builder (command + subagent + templates + validator).
+- `agent-factory-claude/` — Phase 1 Claude Code-specific builder (command + subagent + templates + validator). Superseded by the unified `agent-factory.md`.
+- `agent-factory-gemini/` — Phase 1 Gemini CLI-specific builder. Same structure as `agent-factory-claude/`.
 
 ## Agent File Format
 
@@ -80,9 +83,24 @@ The `agent-factory.md` workflow runs these steps:
 - **Cautious** (auto + warn): Write, Edit, NotebookEdit
 - **Restricted** (always ask user): Bash, Task, Agent
 
+## Tests
+
+Smoke and integration tests live in `tests/e2e/` and `tests/integration/`, organized under `epic_agent-factory/` and `epic_agent-factory-gemini/`. They are plain Python files with no external test runner configured — run directly with:
+
+```bash
+python tests/e2e/epic_agent-factory/test_smoke_01_deliverables.py
+python tests/integration/epic_agent-factory/test_integration_validator_refinement.py
+```
+
+The Phase 1 validator has its own bash test runner:
+
+```bash
+bash agent-factory-claude/tests/run-validator-tests.sh
+```
+
 ## Editing the Workflow
 
-The canonical source is `agent-factory.md` in the repo root. All IDE-specific locations (`.claude/commands/`, `.gemini/commands/`, `.agent/workflows/`) are **symlinks** pointing to the root file — edits auto-sync across all platforms.
+The canonical source is `agent-factory.md` in the repo root. Within this repo, `.gemini/commands/` and `.agent/workflows/` contain **committed symlinks** pointing back to the root file. `.claude/commands/` is gitignored — symlinks there are local only and must be re-created manually after a fresh clone. Edits to `agent-factory.md` auto-sync to Gemini CLI and Antigravity; Claude Code requires the local symlink to exist.
 
 When modifying the workflow logic in `agent-factory.md`, keep these constraints:
 - Clarification step: max 3 questions total
