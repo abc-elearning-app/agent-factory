@@ -109,6 +109,145 @@ Xem thư mục [`examples/`](examples/) để tham khảo 3 agent mẫu:
 - `code-reviewer.md` — Review code tìm bugs & anti-patterns
 - `data-analyzer.md` — Phân tích dữ liệu có cấu trúc
 
+## Hướng dẫn cho người mới (không cần biết code)
+
+### Terminal là gì?
+
+Terminal (hay Command Line) là ứng dụng cho phép bạn gõ lệnh để điều khiển máy tính bằng text, thay vì click chuột.
+
+### Cách mở Terminal
+
+**Mac:**
+- Cách 1: Nhấn `Cmd + Space`, gõ **Terminal**, nhấn Enter
+- Cách 2: Mở **Finder** → **Applications** → **Utilities** → **Terminal**
+
+**Windows:**
+- Cách 1: Nhấn `Win + R`, gõ **cmd**, nhấn Enter
+- Cách 2: Nhấn `Win`, gõ **Command Prompt** hoặc **PowerShell**, nhấn Enter
+
+**Linux:**
+- Nhấn `Ctrl + Alt + T`
+
+### Các lệnh cơ bản cần biết
+
+| Lệnh | Ý nghĩa | Ví dụ |
+|-------|----------|-------|
+| `cd <thư_mục>` | Di chuyển vào thư mục | `cd Desktop` |
+| `cd ..` | Quay lại thư mục cha | |
+| `ls` (Mac/Linux) hoặc `dir` (Windows) | Xem danh sách file trong thư mục hiện tại | |
+| `pwd` | Xem đang ở thư mục nào | |
+
+### Cài đặt từng bước
+
+**Bước 1: Cài Claude Code (nếu chưa có)**
+
+Mở Terminal, chạy lệnh:
+
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+> Nếu báo lỗi `npm: command not found`, bạn cần cài Node.js trước tại https://nodejs.org (chọn bản LTS, tải về và cài như app bình thường).
+
+**Bước 2: Di chuyển vào thư mục project của bạn**
+
+```bash
+cd đường/dẫn/tới/project
+```
+
+Ví dụ nếu project nằm trên Desktop:
+
+```bash
+cd ~/Desktop/my-project
+```
+
+> **Mẹo:** Trên Mac, bạn có thể gõ `cd ` (có dấu cách) rồi kéo thả thư mục từ Finder vào Terminal — nó sẽ tự điền đường dẫn.
+
+**Bước 3: Tải code Agent Factory về máy**
+
+Có 2 cách:
+
+**Cách 1: Dùng `git clone` (khuyến khích)**
+
+```bash
+git clone https://github.com/abc-elearning-app/agent-factory.git
+```
+
+Lệnh này sẽ tạo thư mục `agent-factory/` chứa toàn bộ code. Sau này muốn cập nhật phiên bản mới, chỉ cần:
+
+```bash
+cd agent-factory
+git pull
+```
+
+> Nếu báo `command not found: git`, bạn cần cài Git trước:
+> - **Mac:** Mở Terminal, chạy `xcode-select --install`, nhấn Install trong popup
+> - **Windows:** Tải từ https://git-scm.com → cài như app bình thường → **khởi động lại Terminal**
+
+**Cách 2: Tải file ZIP (không cần cài Git)**
+
+1. Mở trình duyệt, vào https://github.com/abc-elearning-app/agent-factory
+2. Nhấn nút **Code** (màu xanh) → chọn **Download ZIP**
+3. Giải nén file ZIP ra thư mục tuỳ ý (ví dụ Desktop)
+
+> Lưu ý: Cách này không hỗ trợ `git pull` để cập nhật — mỗi lần muốn cập nhật bạn phải tải ZIP lại.
+
+**Bước 4: Chạy script cài đặt**
+
+```bash
+cd agent-factory
+./install.sh
+```
+
+> Nếu báo `Permission denied`, chạy: `chmod +x install.sh` rồi thử lại.
+
+**Bước 5: Quay lại project và mở Claude Code**
+
+```bash
+cd ~/Desktop/my-project
+claude
+```
+
+**Bước 6: Dùng Agent Factory**
+
+Trong giao diện Claude Code, gõ:
+
+```
+/agent-factory "mô tả agent bạn muốn tạo"
+```
+
+Ví dụ:
+
+```
+/agent-factory "thu thập tiêu đề bài viết từ VnExpress"
+```
+
+### Minh hoạ toàn bộ quy trình
+
+```
+[Mở Terminal]
+                    ↓
+cd ~/Desktop/my-project        ← vào thư mục project
+                    ↓
+claude                         ← mở Claude Code
+                    ↓
+/agent-factory "..."           ← tạo agent
+                    ↓
+Xem kết quả → gõ feedback → agent tự cải tiến
+                    ↓
+/run-agent                     ← chạy lại agent đã tạo
+```
+
+### Gặp lỗi thường gặp
+
+| Lỗi | Nguyên nhân | Cách sửa |
+|-----|-------------|----------|
+| `command not found: claude` | Chưa cài Claude Code | Chạy `npm install -g @anthropic-ai/claude-code` |
+| `command not found: npm` | Chưa cài Node.js | Tải từ https://nodejs.org |
+| `command not found: git` | Chưa cài Git | Mac: chạy `xcode-select --install`. Windows: tải từ https://git-scm.com |
+| `Permission denied` | File chưa có quyền chạy | Chạy `chmod +x install.sh` |
+| `No such file or directory` | Sai đường dẫn thư mục | Kiểm tra lại bằng `ls` và `pwd` |
+
 ## License
 
 MIT
