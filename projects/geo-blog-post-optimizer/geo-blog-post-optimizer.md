@@ -40,57 +40,39 @@ Parse the Sheet ID from the URL or accept a raw Sheet ID:
 
 Both Google Sheets and Google Drive scopes are required. Try in this order:
 
-**Option A — gcloud:**
+Run:
 ```bash
-gcloud auth application-default print-access-token 2>/dev/null
+ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
 ```
-If a token is returned, verify it includes the Sheets scope:
-```bash
-curl -s "https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=$(gcloud auth application-default print-access-token 2>/dev/null)" \
-  | python3 -c "import sys,json; s=json.load(sys.stdin).get('scope',''); print('ok' if 'spreadsheets' in s else 'missing')"
-```
-If scope is `missing` (or no token at all), re-authenticate:
+If `ACCESS_TOKEN` is non-empty, proceed. If empty, re-authenticate:
 ```bash
 gcloud auth application-default login \
   --scopes="https://www.googleapis.com/auth/drive.file,https://www.googleapis.com/auth/spreadsheets"
 ```
-After login, re-run `gcloud auth application-default print-access-token` and store as `ACCESS_TOKEN`.
+Then re-run the token command and store as `ACCESS_TOKEN`.
 
-**Option B — Python (if gcloud not available):**
-Use the Python OAuth flow from Step E3b, with these scopes:
-```python
-SCOPES = [
-    'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/spreadsheets'
-]
-```
+**Gemini CLI check (required only if any rows have Writer = "Gemini"):**
 
-**Gemini API key (required only if any rows have Writer = "Gemini"):**
-
-Check for the key in this order:
+Verify that the `gemini` CLI is installed and authenticated:
 ```bash
-# 1. Environment variable
-echo $GEMINI_API_KEY
-
-# 2. Key file
-cat ~/.config/geo-optimizer/gemini_api_key 2>/dev/null
+gemini --version 2>/dev/null || echo "NOT_FOUND"
 ```
 
-If neither is set and the sheet has Gemini rows, display:
+If output is `NOT_FOUND`, display:
 ```
-🔑 Gemini API key not found.
+⚠️  Gemini CLI not found. Rows with Writer = "Gemini" cannot be processed.
 
-To get your key:
-1. Go to aistudio.google.com/apikey
-2. Sign in as dangluu1010@gmail.com
-3. Click "Create API key" → copy the key
-4. Run this in Terminal (paste your key):
-   echo 'YOUR_KEY_HERE' > ~/.config/geo-optimizer/gemini_api_key
+Install Gemini CLI:
+  npm install -g @google/gemini-cli
+  # or: https://github.com/google-gemini/gemini-cli
 
-Then type "retry" to continue.
+Then sign in with your Google account:
+  gemini auth login
+
+Type "retry" to continue, or "skip" to process only Claude rows.
 ```
 
-Wait for "retry", then re-check. Store the found key as `GEMINI_API_KEY` for use in B6.
+Wait for user response before continuing.
 
 ## B3. Read "Optimize" Rows from Sheet
 
@@ -107,11 +89,16 @@ A: URL | B: Status | C: Writer | D: Optimized Doc | E: Fail Reason | F: Processe
 - `Failed ❌` — set by the agent on failure (reason written to column E)
 
 **Writer column (user-controlled dropdown):**
-- `Claude` — this agent processes the post (default)
-- `Gemini` — skip this row and note it in the summary (Gemini must be run separately via Gemini CLI)
+- `Claude` — this agent (Claude) runs the full optimization (default)
+- `Gemini` — Claude fetches the content and handles Sheets/Drive API calls; the content optimization step is run via the `gemini` CLI using your personal Google account (no API key required)
 - Empty — treated as Claude
 
-Read columns A, B, and C, filter for rows where Status = "Optimize" AND Writer is "Claude" or empty:
+Set the batch size before reading the sheet. Default is 25 rows per run — large enough to make progress, small enough to stay within context limits. Use 50 if all rows are Writer = "Gemini" (lighter on Claude tokens):
+```bash
+BATCH_SIZE=25  # increase to 50 for Gemini-only batches
+```
+
+Read columns A, B, and C, filter for rows where Status = "Optimize", and take only the first `BATCH_SIZE` rows:
 ```bash
 ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
 SHEET_ID="{SHEET_ID}"
@@ -122,6 +109,8 @@ curl -s "https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/A:C" \
 import sys, json
 data = json.load(sys.stdin)
 rows = data.get('values', [])
+batch_size = ${BATCH_SIZE}
+found = []
 for i, row in enumerate(rows):
     if i == 0:
         continue  # skip header row
@@ -130,18 +119,17 @@ for i, row in enumerate(rows):
     writer = row[2].strip().lower() if len(row) > 2 else 'claude'
     if url and status == 'optimize':
         writer_val = writer if writer in ('claude', 'gemini') else 'claude'
-        print(f'{i+1}|{writer_val}|{url}')
+        found.append(f'{i+1}|{writer_val}|{url}')
+total = len(found)
+batch = found[:batch_size]
+print(f'TOTAL={total}')
+print(f'BATCH={len(batch)}')
+for row in batch:
+    print(row)
 "
 ```
 
-Display a preview showing writer per row:
-```
-📋 Found {N} rows with Status "Optimize":
-   Row 2: [Claude] https://...
-   Row 3: [Gemini] https://...
-
-Proceeding with optimization...
-```
+Parse the output: the first two lines are `TOTAL=` and `BATCH=` counts; remaining lines are `row|writer|url` entries to process.
 
 If no rows have Status = "Optimize", display:
 ```
@@ -152,9 +140,11 @@ Then stop.
 
 Otherwise display a preview:
 ```
-📋 Found {N} rows with Status "Optimize":
-   Row 2: https://...
-   Row 3: https://...
+📋 {TOTAL} rows pending — processing {BATCH} this run (batch size: {BATCH_SIZE}):
+   Row 2: [Claude] https://...
+   Row 3: [Gemini] https://...
+   ...
+   {TOTAL - BATCH} rows remain for next run(s).
 
 Proceeding with optimization...
 ```
@@ -199,13 +189,38 @@ echo "FOLDER_ID=${FOLDER_ID}"
 
 ## B6. Process Each URL
 
-For each row with Status = "Optimize", run the following steps:
+Before the per-row loop, write the GEO criteria to a shared file so it is not duplicated in every Gemini task:
+```bash
+cat > /tmp/geo-criteria.txt <<'CRITERIA_EOF'
+1. Opening Answer Block: Rewrite the first 40-60 words to directly answer the title question. Include "X is..." or "X refers to..." definition. Specify grade level/age where applicable.
+2. Self-Contained Answer Blocks: Each H2 section must have a 134-167 word passage readable in isolation, starting with a declarative statement, containing at least one specific fact/number/grade level, ending with a complete thought.
+3. Definition Patterns: For every major term, add "A [term] is...", "[Term] refers to...", "The difference between X and Y is...", or "X works by..." patterns.
+4. Heading Structure: Rewrite all H2/H3 headings as questions the audience would type into a search engine. Include grade level, subject, or use case.
+5. Specificity: Replace vague claims with exact grade levels (e.g. "grades 2-4, ages 7-10"), time estimates (e.g. "10-15 minutes"), curriculum standards (e.g. Common Core 3.OA.C.7).
+6. Paragraph Length: Split any paragraph over 4 sentences into 2-4 sentence units. One idea per paragraph.
+7. Lists: Convert any 3+ item run-on sentences to bulleted or numbered lists.
+8. Comparison Tables: If multiple grade levels or skills are covered, add a table (Grade | Topic | Key Skill | Recommended Time).
+9. FAQ Section: Add 4 FAQs based on what a real reader (teacher, parent, student) would ask after reading this post. Each answer 40-80 words, self-contained.
+10. Expertise Signals: Add 2 practitioner-voice sentences ("In a classroom setting...", "A common mistake students make is...", "We recommend pairing this with...").
+11. Internal Linking: Search for related Worksheetzone pages using `site:worksheetzone.org [relevant topic keywords]`. Insert 2-3 internal links where they fit naturally in existing prose — use descriptive anchor text that matches the linked page's topic. Rules: (a) never modify existing internal links already in the post, (b) never self-link to the post being optimized, (c) only add a link where the surrounding sentence reads naturally without forcing it.
+12. External Citations: For every research finding, statistic, curriculum standard, or named methodology referenced in the post, search for the real source and embed it as a markdown hyperlink on the relevant phrase: [phrase](URL). Add a ## References section at the end listing all cited sources in full. Flag any claim that could not be sourced as [VERIFY: suggested source].
+CRITERIA_EOF
+```
+
+For each row in the current batch, run the following steps:
+
+**Step 0 — Refresh access token**
+
+Refresh the gcloud token at the start of every row so it never expires mid-batch:
+```bash
+ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
+```
+If the token is empty, re-authenticate (`gcloud auth login`) before continuing.
 
 **Step 1 — Mark as In Progress**
 
 Immediately update column B to `In Progress ⏳` so the sheet reflects current state:
 ```bash
-ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
 ROW={row_number}
 
 curl -s -X PUT \
@@ -220,78 +235,182 @@ Show progress:
 [1/{N}] ⏳ Row {ROW}: https://...
 ```
 
-**Step 2 — Fetch content**
+The steps for **Step 2 and Step 3** differ by writer. Follow the path that matches the row's Writer value.
+
+---
+
+### Path A — Writer = "Claude"
+
+**Step 2A — Fetch content**
 
 Fetch the blog post content via WebFetch.
 
-**Step 3 — Optimize (writer-dependent)**
+**Step 3A — Optimize**
 
-**If Writer = "Claude":** Apply all 10 GEO criteria directly (Claude processes internally — same as single-post mode).
+Apply all 12 GEO criteria directly (Claude processes internally — same as single-post mode). Write the full optimized post to `/tmp/geo-optimized-{slug}.md`.
 
-**If Writer = "Gemini":** Send the fetched content to the Gemini API with the full optimization prompt:
+---
 
+### Path B — Writer = "Gemini"
+
+**Claude processes this row — do not skip it.** Claude handles Steps 0, 1, 2B, 4, and 5. Only Step 3B (content optimization) is run via the `gemini` CLI subprocess. Claude fetches the raw HTML, extracts the content with links preserved, builds the task file, runs `gemini`, then uploads to Drive and updates the sheet.
+
+**Step 2B — Fetch raw HTML, extract content and internal links (Claude)**
+
+Use `curl` + Python to fetch the raw HTML, convert the article body to markdown preserving all `<a href>` links, and separately save the list of internal content links for post-processing verification:
 ```bash
-GEMINI_API_KEY=$(cat ~/.config/geo-optimizer/gemini_api_key 2>/dev/null || echo $GEMINI_API_KEY)
-CONTENT_FILE="/tmp/geo-source-{slug}.txt"
-OUTPUT_FILE="/tmp/geo-optimized-{slug}.md"
-```
+SLUG="{slug}"
+CONTENT_FILE="/tmp/geo-source-${SLUG}.txt"
+LINKS_FILE="/tmp/geo-links-${SLUG}.txt"
+OUTPUT_FILE="/tmp/geo-optimized-${SLUG}.md"
+TASK_FILE="/tmp/geo-task-${SLUG}.txt"
 
-Build the prompt by combining all 10 GEO criteria instructions (Opening Answer Block, Self-Contained Blocks, Definition Patterns, Heading Structure, Specificity, Paragraph Length, Lists, Comparison Tables, FAQ, Expertise Signals) with the fetched content, then call:
+curl -s "{URL}" | python3 - <<'PYEOF' > "${CONTENT_FILE}"
+import sys, re
 
-```bash
-python3 - <<'PYEOF'
-import urllib.request, json, os, sys
+html = sys.stdin.read()
 
-api_key = open(os.path.expanduser('~/.config/geo-optimizer/gemini_api_key')).read().strip()
-content = open('/tmp/geo-source-{slug}.txt').read()
+# Extract article body (try common content containers in order)
+body = html
+for pattern in [
+    r'<article[^>]*>(.*?)</article>',
+    r'<div[^>]*class="[^"]*entry-content[^"]*"[^>]*>(.*?)</div>',
+    r'<main[^>]*>(.*?)</main>',
+]:
+    m = re.search(pattern, html, re.DOTALL | re.IGNORECASE)
+    if m:
+        body = m.group(1)
+        break
 
-prompt = """You are a GEO Content Optimizer for Worksheetzone (worksheetzone.org).
-Rewrite the following blog post applying ALL of these criteria:
+# Remove scripts and styles
+body = re.sub(r'<(script|style)[^>]*>.*?</\1>', '', body, flags=re.DOTALL | re.IGNORECASE)
 
-1. Opening Answer Block: Rewrite the first 40-60 words to directly answer the title question. Include "X is..." or "X refers to..." definition. Specify grade level/age where applicable.
-2. Self-Contained Answer Blocks: Each H2 section must have a 134-167 word passage readable in isolation, starting with a declarative statement, containing at least one specific fact/number/grade level, ending with a complete thought.
-3. Definition Patterns: For every major term, add "A [term] is...", "[Term] refers to...", "The difference between X and Y is...", or "X works by..." patterns.
-4. Heading Structure: Rewrite all H2/H3 headings as questions the audience would type into a search engine. Include grade level, subject, or use case.
-5. Specificity: Replace vague claims with exact grade levels (e.g. "grades 2-4, ages 7-10"), time estimates (e.g. "10-15 minutes"), curriculum standards (e.g. Common Core 3.OA.C.7).
-6. Paragraph Length: Split any paragraph over 4 sentences into 2-4 sentence units. One idea per paragraph.
-7. Lists: Convert any 3+ item run-on sentences to bulleted or numbered lists.
-8. Comparison Tables: If multiple grade levels or skills are covered, add a table (Grade | Topic | Key Skill | Recommended Time).
-9. FAQ Section: Add 5 FAQs — (1) Is it free? (2) What grade level? (3) How long does it take? (4) Homework/homeschool use? (5) One topic-specific question. Each answer 40-80 words.
-10. Expertise Signals: Add 2+ practitioner-voice sentences ("In a classroom setting...", "A common mistake students make is...", "We recommend pairing this with...").
+# Convert headings
+for i in range(4, 0, -1):
+    body = re.sub(rf'<h{i}[^>]*>(.*?)</h{i}>', lambda m, n=i: '\n' + '#'*n + ' ' + re.sub('<[^>]+>', '', m.group(1)).strip() + '\n', body, flags=re.DOTALL | re.IGNORECASE)
 
-Output the full rewritten post in markdown. Brand name is always "Worksheetzone" (lowercase z).
+# Convert links to markdown — THIS is what preserves href + anchor text
+body = re.sub(
+    r'<a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',
+    lambda m: f'[{re.sub("<[^>]+>","",m.group(2)).strip()}]({m.group(1)})',
+    body, flags=re.DOTALL | re.IGNORECASE
+)
 
---- BLOG POST CONTENT ---
-""" + content
+# Convert paragraphs and lists
+body = re.sub(r'<p[^>]*>', '\n', body, flags=re.IGNORECASE)
+body = re.sub(r'</p>', '\n', body, flags=re.IGNORECASE)
+body = re.sub(r'<li[^>]*>', '\n- ', body, flags=re.IGNORECASE)
 
-payload = json.dumps({
-    "contents": [{"parts": [{"text": prompt}]}],
-    "generationConfig": {"temperature": 0.7, "maxOutputTokens": 8192}
-}).encode()
+# Strip remaining HTML tags
+body = re.sub(r'<[^>]+>', '', body)
 
-url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-resp = urllib.request.urlopen(req)
-result = json.loads(resp.read())
-text = result['candidates'][0]['content']['parts'][0]['text']
-open('/tmp/geo-optimized-{slug}.md', 'w').write(text)
-print("done")
+# Clean whitespace
+body = re.sub(r'\n{3,}', '\n\n', body)
+body = re.sub(r'[ \t]+', ' ', body)
+print(body.strip())
 PYEOF
+
+# Extract internal content links from the fetched content for later verification
+# Skips navigation/meta links (categories, author, feed, wp-json)
+python3 -c "
+import re, sys
+content = open('${CONTENT_FILE}').read()
+links = re.findall(r'\[([^\]]+)\]\((https?://worksheetzone\.org[^)]+|/[^)]+)\)', content)
+skip = ['/blog/category/', '/author/', '/feed', '/wp-json', '/comments/', '/xmlrpc', '/wp-login', '?']
+for anchor, url in links:
+    if not any(s in url for s in skip) and len(anchor) > 2:
+        print(f'{anchor}|||{url}')
+" > "${LINKS_FILE}"
 ```
 
-Show which model was used in the progress line:
+**Step 3B — Delegate optimization to Gemini CLI**
+
+Build a task file embedding the pre-fetched content so Gemini optimizes without re-fetching:
+```bash
+cat > "${TASK_FILE}" <<TASK_EOF
+You are a GEO Content Optimizer for Worksheetzone (worksheetzone.org).
+
+Your task:
+1. Optimize the blog post content provided below (do NOT fetch any URL).
+2. Apply ALL 12 GEO criteria listed after the content.
+3. Write the complete optimized post in markdown to: /tmp/geo-optimized-{slug}.md
+
+CRITICAL RULES:
+- PRESERVE every existing link in the content below exactly as-is — same URL, same anchor text, same position. Never remove, rewrite, or move any link already present.
+- Brand name is always "Worksheetzone" (lowercase z).
+
+--- ORIGINAL BLOG POST CONTENT ---
+$(cat "${CONTENT_FILE}")
+--- END OF CONTENT ---
+
+GEO criteria to apply:
+$(cat /tmp/geo-criteria.txt)
+
+Output: write the full optimized markdown to /tmp/geo-optimized-{slug}.md
+TASK_EOF
+```
+
+Run the Gemini CLI (uses your personal Google account — no API key needed):
+```bash
+gemini -m gemini-2.5-flash -p "$(cat "${TASK_FILE}")"
+```
+
+If `gemini` exits with a non-zero code or the output file is not created, mark the row as Failed with reason "Gemini CLI error: {stderr}".
+
+**Step 3B-verify — Inject any missing internal links (Claude)**
+
+After Gemini writes the output, verify every internal link from `LINKS_FILE` is present. Inject any that are missing:
+```bash
+python3 - <<'INJECT_EOF'
+import re
+
+slug = "{slug}"
+links_file = f"/tmp/geo-links-{slug}.txt"
+output_file = f"/tmp/geo-optimized-{slug}.md"
+
+with open(links_file) as f:
+    required = [line.strip().split("|||") for line in f if "|||" in line]
+
+with open(output_file) as f:
+    content = f.read()
+
+injected = []
+for anchor, url in required:
+    if url not in content:
+        # Append as a natural inline reference before the References/FAQ section
+        insert_marker = "\n## "
+        pos = content.rfind(insert_marker)
+        sentence = f"\nFor more, see [{anchor}]({url}).\n"
+        if pos > 0:
+            content = content[:pos] + sentence + content[pos:]
+        else:
+            content += sentence
+        injected.append(f"{anchor} -> {url}")
+
+with open(output_file, "w") as f:
+    f.write(content)
+
+if injected:
+    print(f"Injected {len(injected)} missing link(s): {injected}")
+else:
+    print("All internal links present — no injection needed.")
+INJECT_EOF
+```
+
+---
+
+Show which writer handled the row in the progress line:
 ```
 [1/{N}] ⏳ Row {ROW} [Claude]: https://...
-[2/{N}] ⏳ Row {ROW} [Gemini 2.0 Flash]: https://...
+[2/{N}] ⏳ Row {ROW} [Gemini CLI]: https://...
 ```
 
 **Step 4 — Save and upload**
 
-- The optimized markdown is already at `/tmp/geo-optimized-{slug}.md` (written by Claude internally or by the Gemini Python script above)
+- The optimized markdown is at `/tmp/geo-optimized-{slug}.md` — written there by Claude (Path A) or by the `gemini` CLI (Path B)
 - Convert to HTML (Step E2)
 - Upload to Drive inside `GEO Optimized Posts` folder (Step E4):
   ```bash
-  ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
   TITLE="[GEO Optimized] {post title}"
   HTML_FILE="/tmp/geo-optimized-{slug}.html"
 
@@ -309,7 +428,6 @@ Show which model was used in the progress line:
 
 On **success** — update B (Status), D (Optimized Doc), F (Processed Date); leave E empty:
 ```bash
-ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
 TODAY=$(date -I)
 
 curl -s -X PUT \
@@ -321,7 +439,6 @@ curl -s -X PUT \
 
 On **failure** — update B (Status), E (Fail Reason), F (Processed Date); leave D empty:
 ```bash
-ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
 TODAY=$(date -I)
 REASON="{brief description of what failed}"
 
@@ -340,14 +457,14 @@ Show per-URL result:
 
 ## B7. Batch Summary
 
-After all rows are processed:
+After all rows in the current batch are processed:
 ```
-✅ Batch complete: {N_done}/{N_total} rows processed
+✅ Batch complete: {N_done}/{BATCH} processed this run
 
-| Row | URL | Status | Google Doc |
-|-----|-----|--------|------------|
-| 2   | https://... | Done ✅ | [Open](https://...) |
-| 3   | https://... | Failed ❌ | Reason: could not fetch page |
+| Row | URL | Writer | Status | Google Doc |
+|-----|-----|--------|--------|------------|
+| 2   | https://... | Claude | Done ✅ | [Open](https://...) |
+| 3   | https://... | Gemini | Failed ❌ | Reason: could not fetch page |
 
 📊 Sheet updated:
    https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit
@@ -356,9 +473,15 @@ After all rows are processed:
    https://drive.google.com/drive/folders/{FOLDER_ID}
 ```
 
+If rows remain (TOTAL > BATCH), append:
+```
+⏭️  {TOTAL - BATCH} rows still pending in the sheet.
+   Run the agent again with the same sheet URL to continue.
+```
+
 For any failed rows, explain the reason and suggest a fix (e.g. "URL returned 404 — check the link", "Page blocked WebFetch — try pasting the content directly").
 
-To retry a failed row: the user sets column B back to `Optimize` and runs the agent again.
+To retry a failed row: set column B back to `Optimize` and run the agent again.
 
 ---
 
@@ -421,6 +544,14 @@ Insert exactly 2 practitioner-voice sentences where they fit naturally:
 - "In a classroom setting, this works best when..."
 - "A common mistake students make is... — address this by..."
 - "We recommend pairing this with... for students who..."
+
+## 10. Internal Links — Add 2-3 Where Natural
+Search for related Worksheetzone pages using `site:worksheetzone.org [relevant topic keywords]` (run 1-2 WebSearch queries based on the post's main topics). Insert 2-3 internal links where they fit naturally in existing prose:
+- Use descriptive anchor text matching the linked page's topic (e.g. `[grade 3 multiplication worksheets](https://worksheetzone.org/...)`)
+- Place only where the surrounding sentence reads naturally without forcing it
+- Never modify existing internal links already in the post
+- Never link to the post itself (no self-links)
+- Never add more than 3 new internal links per post
 
 ---
 
@@ -531,87 +662,17 @@ gcloud auth application-default print-access-token 2>/dev/null
   ```
   Wait for user to type "retry", then re-run Step E3.
 
-  **If gcloud is NOT installed**, check for Python google-auth:
-  ```bash
-  python3 -c "import google.auth" 2>/dev/null && echo "available" || echo "not available"
+  **If gcloud is NOT installed**, display:
   ```
-
-  - If Python google-auth **is available** → proceed to Step E3b (Python OAuth flow).
-  - If Python google-auth **is NOT available** → skip to Step E5 (fallback).
-
-## Step E3b: Python OAuth flow (only if gcloud not available)
-
-```bash
-python3 - <<'EOF'
-from google_auth_oauthlib.flow import InstalledAppFlow
-import json, pathlib
-
-SCOPES = [
-    'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/spreadsheets'
-]
-# Check for stored credentials
-cred_path = pathlib.Path.home() / '.config' / 'geo-optimizer' / 'token.json'
-cred_path.parent.mkdir(parents=True, exist_ok=True)
-
-if cred_path.exists():
-    from google.oauth2.credentials import Credentials
-    from google.auth.transport.requests import Request
-    creds = Credentials.from_authorized_user_file(str(cred_path), SCOPES)
-    if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-else:
-    print("NEEDS_AUTH")
-    exit(0)
-
-cred_path.write_text(creds.to_json())
-print(creds.token)
-EOF
-```
-
-If output is `NEEDS_AUTH`, display:
-```
-🔐 Google login required.
-
-Opening browser for Google sign-in...
-(If the browser doesn't open automatically, copy the URL shown in the terminal.)
-
-This grants permission to create and manage files in your Google Drive and read/write your Google Sheets.
-```
-
-Then run the full OAuth consent flow:
-```bash
-python3 - <<'EOF'
-from google_auth_oauthlib.flow import InstalledAppFlow
-import pathlib
-
-SCOPES = [
-    'https://www.googleapis.com/auth/drive.file',
-    'https://www.googleapis.com/auth/spreadsheets'
-]
-CLIENT_CONFIG = {
-    "installed": {
-        "client_id": "YOUR_CLIENT_ID",
-        "client_secret": "YOUR_CLIENT_SECRET",
-        "redirect_uris": ["urn:ietf:wg:oauth:2.0:oob", "http://localhost"],
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token"
-    }
-}
-flow = InstalledAppFlow.from_client_config(CLIENT_CONFIG, SCOPES)
-creds = flow.run_local_server(port=0)
-cred_path = pathlib.Path.home() / '.config' / 'geo-optimizer' / 'token.json'
-cred_path.write_text(creds.to_json())
-print(creds.token)
-EOF
-```
-
-> **Note:** If running the full Python OAuth flow, inform the user:
-> "The Python OAuth flow requires a Google Cloud OAuth client ID. If you don't have one set up, the easiest path is to install gcloud CLI (`brew install --cask google-cloud-sdk` on Mac, or visit cloud.google.com/sdk) and run `gcloud auth login`."
+  ⚠️  gcloud CLI is required for Google Drive export.
+  Install it: brew install --cask google-cloud-sdk
+  Then run: gcloud auth login
+  ```
+  Stop the export and display the optimized post as markdown output only.
 
 ## Step E4: Upload HTML to Google Drive as Google Doc
 
-Using the access token from Step E3 or E3b, upload the HTML file and convert it to a Google Doc:
+Using the access token from Step E3, upload the HTML file and convert it to a Google Doc:
 
 ```bash
 ACCESS_TOKEN=$(gcloud auth application-default print-access-token 2>/dev/null)
@@ -641,46 +702,7 @@ Headings, citations, tables, and lists are fully preserved.
 You can move the file to any folder in your Drive.
 ```
 
-If the upload fails (e.g., API error), display the raw error and fall through to Step E5.
-
-## Step E5: Fallback — export as .docx
-
-If Google auth could not be completed or the upload failed:
-
-Check for pandoc:
-```bash
-pandoc --version 2>/dev/null | head -1
-```
-
-- **If pandoc available:**
-  ```bash
-  pandoc /tmp/geo-optimized-{slug}.md \
-    -o /tmp/geo-optimized-{slug}.docx \
-    --reference-doc=/tmp/geo-optimized-{slug}.docx 2>/dev/null || \
-  pandoc /tmp/geo-optimized-{slug}.md -o /tmp/geo-optimized-{slug}.docx
-  ```
-  Display:
-  ```
-  📄 Exported as Word document: /tmp/geo-optimized-{slug}.docx
-
-  To open as a Google Doc:
-  1. Go to drive.google.com
-  2. Click New → File upload → select the .docx file
-  3. Right-click the uploaded file → Open with Google Docs
-     (Headings, tables, and formatting are preserved on import.)
-  ```
-
-- **If pandoc NOT available:**
-  ```
-  ℹ️ No export tool available. To create a Google Doc manually:
-  1. Go to docs.google.com → click "Blank document"
-  2. Copy the Full Optimized Post from above
-  3. Paste into the doc — Google Docs auto-formats # headings as Heading 1,
-     ## as Heading 2, ### as Heading 3 when you use "Paste and match style"
-
-  To enable auto-heading paste:
-  Edit → Paste and match style (Cmd+Shift+V on Mac / Ctrl+Shift+V on Windows)
-  ```
+If the upload fails (e.g., API error), display the raw error and output the optimized post as markdown only.
 
 ---
 
@@ -693,3 +715,4 @@ pandoc --version 2>/dev/null | head -1
 - Always write "Worksheetzone" (never "WorksheetZone")
 - Preserve the original post's tone (educational, friendly, teacher-facing)
 - If post < 400 words, note it and recommend expansion to 700 words minimum
+- **NEVER modify existing internal URLs** — any link already present in the original post that points to worksheetzone.org must be kept exactly as-is: same anchor text, same URL, same placement. Do not rewrite, reorder, remove, or replace them. New internal links may only be added per Criterion 10.
