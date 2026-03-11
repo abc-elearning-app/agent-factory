@@ -224,18 +224,62 @@ You'll paste this into the installer at Step 7.
 
 ---
 
-## 7. Running the Agent
+## 7. Running the Tool
 
-Once setup is complete:
+There are two ways to run the tool. Both do exactly the same work.
 
-### Open Claude Code in the install directory
+### Option A — Terminal script (recommended for daily use)
+
+No need to open Claude Code. Run directly from any terminal:
+
+```bash
+cd ~/pinterest-generator
+
+# Process all pending tasks
+python3 scripts/run_pinterest_batch.py
+
+# Process at most 3 tasks
+python3 scripts/run_pinterest_batch.py --limit 3
+
+# Dry run — fetch and generate but skip CSV write, upload, and sheet update
+python3 scripts/run_pinterest_batch.py --dry-run
+```
+
+Sample output:
+
+```
+============================================================
+Pinterest Pin CSV Generator — Batch Runner
+============================================================
+Reading sheet...
+📋 Found 2 pending task(s):
+   Row 2 │ https://worksheetzone.org/.../watermelon  → Board: 'Watermelon'
+   Row 3 │ https://worksheetzone.org/.../banana      → Board: 'Banana'
+
+🔍 Dedup registry: 0 URLs already seen
+
+── Task 1/2  Row 2 │ https://worksheetzone.org/.../watermelon
+   [1/4] Fetching items via Gemini...
+   [1/4] ✅ 14 item(s) found
+   [2/4] 🔍 14/14 unique
+   [3/4] Generating Pinterest metadata via Gemini...
+   [3/4] ✅ Metadata ready for 14 item(s)
+   [4/4] ✅ 14/14 rows passed validation
+
+📤 Uploading pinterest_pins_2026-03-11_part1.csv (14 pins)...
+   ✅ https://drive.google.com/file/d/.../view
+✅ Row 2 → done  (board: 'Watermelon', 14 pins)
+============================================================
+```
+
+### Option B — Claude Code agent (interactive, with review step)
+
+Use this when you want to review the generated metadata before writing the CSV, or when you want to adjust the content interactively.
 
 ```bash
 cd ~/pinterest-generator
 claude
 ```
-
-### Start the Pinterest agent
 
 In Claude Code, type:
 
@@ -243,36 +287,7 @@ In Claude Code, type:
 @pinterest-pin-csv-generator
 ```
 
-Or press `@` and type `pinterest` to find it in the agent picker.
-
-### What the agent does
-
-The agent runs automatically through these steps:
-
-```
-📋 Step 1 — Read pending tasks from your Google Sheet
-✅ Found 3 pending tasks:
-   Row 2 │ https://worksheetzone.org/.../watermelon  → Board: "Watermelon"
-   Row 3 │ https://worksheetzone.org/.../apple       → Board: "Apple"
-   ...
-
-🌐 Step 2 — Fetch items from each listing page (via Gemini)
-✅ Found 14 items on this page.
-
-🔍 Step 2b — Deduplicate (skip already-pinned items)
-🔍 14/14 items are unique.
-
-✏️  Step 3 — Generate Pinterest-optimized titles, descriptions, keywords
-   (Gemini applies the pin copy rules to every item)
-
-✅ Step 4 — Validate all rows (title length, thumbnail URL, description)
-
-💾 Step 5 — Write CSV, upload to Drive, update sheet
-📤 Uploaded: https://drive.google.com/file/d/.../view
-✅ Sheet row 2 → done
-
-✅ All done! 14 pins • 1 CSV file • Board: Watermelon
-```
+Or press `@` and type `pinterest` to find it in the agent picker. The agent pauses after Step 3 to show you a preview and ask for approval before writing the CSV.
 
 ### Board names
 
@@ -349,6 +364,7 @@ After the agent finishes:
 | `No client_secret*.json found` | Credentials file missing or misnamed | Re-download from Google Cloud Console, rename to `client_secret.json`, move to install folder |
 | `403 The caller does not have permission` | Sheet or Drive folder not accessible | Make sure your Google account owns the sheet and Drive folder you configured |
 | `Gemini error` / `gemini: command not found` | Gemini CLI not installed or not in PATH | Run: `npm install -g @google/gemini-cli`, then `gemini` to log in |
+| `timed out after 600 seconds` | Gemini took too long on a large page | The page likely has many items. Re-run — Gemini will resume from where the sheet left off |
 | `No items found on page` | URL is a single worksheet page, not a listing | Use a category/listing URL (shows a grid of worksheets, not a single worksheet) |
 | `All items were already pinned` | Every item on that page was processed before | Add new listing page URLs to the sheet |
 | `Sheet connection failed` | Sheet ID is wrong or sheet not shared | Double-check the Sheet ID in `pinterest_config.env`; make sure the sheet is owned by the authenticated Google account |
@@ -393,11 +409,16 @@ The OAuth token refreshes automatically in the background every time the agent r
 # ── Install (run once) ────────────────────────────────────────────────────────
 curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/project/pinterest-pin-csv-generator/install-pinterest-generator.sh | bash
 
-# ── Daily use ─────────────────────────────────────────────────────────────────
+# ── Daily use — terminal script (no Claude Code needed) ───────────────────────
+cd ~/pinterest-generator
+python3 scripts/run_pinterest_batch.py             # process all pending tasks
+python3 scripts/run_pinterest_batch.py --limit 3   # process at most 3 tasks
+python3 scripts/run_pinterest_batch.py --dry-run   # test without writing anything
+
+# ── Daily use — Claude Code agent (interactive) ───────────────────────────────
 cd ~/pinterest-generator
 claude                          # open Claude Code
-
-# In Claude Code:
+# then in Claude Code:
 @pinterest-pin-csv-generator    # start the agent
 
 # ── Update to the latest version ──────────────────────────────────────────────
