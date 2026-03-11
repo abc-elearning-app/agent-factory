@@ -330,7 +330,7 @@ The CSV columns match Pinterest's bulk upload format exactly:
 | `Description` | 200–232 char description with CTA and hashtags |
 | `Link` | Worksheetzone page URL |
 | `Publish date` | Empty (publish immediately) or scheduled date |
-| `Keywords` | Comma-separated keywords for Pinterest search |
+| `Keywords` | Comma-separated search keywords: topic words derived from the description hashtags (lowercase), followed by grade range codes. Grade levels are normalized to short codes (`Pre`, `KG`, `1st`–`6th`); when a worksheet spans multiple grades only the lowest and highest appear (e.g. `watermelon,coloringpages,preschool,Pre,5th`) |
 
 ### Deduplication
 
@@ -350,7 +350,7 @@ After the agent finishes:
 
 > **200-pin limit:** Pinterest allows a maximum of 200 pins per bulk upload. The agent enforces this automatically — larger batches are split into multiple files.
 
-> **Pinterest review time:** After uploading, Pinterest may take a few minutes to process images. If a pin shows an error, the most common cause is a thumbnail URL that is temporarily unavailable — wait 10 minutes and retry.
+> **Pinterest review time:** After uploading, Pinterest may take a few minutes to process images. If a pin shows a broken image, verify the `Media URL` column contains a direct `storage.googleapis.com` URL ending in `.jpg` or `.png` (not a `.png` extension on a file that is actually `.jpg`). Re-running the affected sheet row will regenerate the correct URL.
 
 ---
 

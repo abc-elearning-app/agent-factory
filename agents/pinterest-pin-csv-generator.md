@@ -69,7 +69,7 @@ fi
 | Source | Pinterest CSV column | Treatment |
 |---|---|---|
 | Generated (see optimization rules) | `Title` | Optimized — do NOT copy worksheet title verbatim |
-| Thumbnail image URL from listing | `Media URL` | Must be the **actual `<img src>` value** read from the page HTML — a Google Cloud Storage CDN URL in the format `https://storage.googleapis.com/worksheetzone/image/{unique-id}/{filename}.png` — never constructed or guessed from the item slug |
+| Thumbnail image URL from listing | `Media URL` | Must be the actual GCS URL extracted from the page — found in `__NEXT_DATA__` JSON or URL-decoded from the `<img src>`'s `url=` parameter. Format: `https://storage.googleapis.com/worksheetzone/image/{unique-id}/{filename}-thumbnail.{ext}` where `.{ext}` must be preserved exactly as found (`.jpg` or `.png`) — never substituted or guessed |
 | Last URL slug (title-cased) | `Pinterest board` | Auto-derived; user can override |
 | `""` | `Thumbnail` | Always blank — image pins |
 | Generated (see optimization rules) | `Description` | Optimized — 150–250 chars + CTA + hashtags |
@@ -190,8 +190,11 @@ NEVER exceed 100 chars
 2. Content type (e.g. `#coloringpages` or `#printableworksheets`)
 3. Audience (e.g. `#preschool`, `#kidsactivities`, or `#homeschool`)
 
-**`Keywords` CSV column:** Strip the `#` from the hashtags and append grade levels.
-Example: `watermelon, coloringpages, preschool, kindergarten`
+**`Keywords` CSV column:** Strip the `#` from the hashtags and append normalized grade codes.
+- Normalize grade levels to these short codes: `Preschool` → `Pre` · `Kindergarten/KG` → `KG` · `Grade 1/1st` → `1st` · `Grade 2/2nd` → `2nd` · `Grade 3/3rd` → `3rd` · `Grade 4/4th` → `4th` · `Grade 5/5th` → `5th` · `Grade 6+` → `6th`
+- If the worksheet spans multiple grades, include **only the lowest and highest code** (range endpoints): `Pre,5th` — NOT `Pre,KG,1st,2nd,3rd,4th,5th`
+- No duplicate keywords. No spaces after commas. Hashtag-derived keywords are all lowercase.
+- Example: `watermelon,coloringpages,preschool,Pre,5th`
 
 ### Quality checklist (run per row before writing CSV)
 
@@ -314,12 +317,14 @@ Run via `Bash`:
 items=$(gemini -p "Fetch [URL] and extract all worksheet items from the listing page grid. For each item return a JSON object with these exact fields: title (string), thumbnail_url (string), page_url (string), description (string), grade_levels (array of strings), tags (array of strings).
 
 CRITICAL RULES FOR thumbnail_url:
-- You MUST read the actual src attribute of the <img> tag rendered for each item card on the page.
-- Worksheetzone thumbnails are served from Google Cloud Storage. The correct URL format is: https://storage.googleapis.com/worksheetzone/image/{unique-id}/{filename}-thumbnail.png (or .jpg)
+- STEP A — Check __NEXT_DATA__ first (most reliable): The page contains a <script id="__NEXT_DATA__" type="application/json"> tag. Parse this JSON and extract thumbnail URLs from it (look for fields named thumbnail_url, image, src, or thumbnailUrl within the item/card data). These contain the raw GCS URLs with the correct extension.
+- STEP B — Fallback to <img> tags: Worksheetzone uses Next.js image optimization. The <img src> attribute is a Next.js proxy URL in the form /_next/image?url=ENCODED_GCS_URL&w=...&q=... — it is NOT a direct GCS URL. You MUST URL-decode the value of the url= query parameter to get the actual GCS URL.
+- The actual GCS URL format is: https://storage.googleapis.com/worksheetzone/image/{unique-id}/{filename}-thumbnail.{ext}
+- The file extension (.jpg or .png) varies per item — ALWAYS preserve it exactly as found in the source. NEVER substitute .png when the actual file is .jpg, or vice versa.
 - The unique-id is a long hex string like 6634b9766d9d16025be86505 — it is NOT derivable from the item title or slug.
 - NEVER construct, guess, or infer a thumbnail_url from the item title or page slug.
 - NEVER use worksheetzone.org/storage/... as the thumbnail domain — that is wrong.
-- If you cannot find the actual <img src> for an item, set thumbnail_url to null. Do not fabricate a URL.
+- If you cannot find the actual thumbnail URL for an item after trying both steps, set thumbnail_url to null. Do not fabricate a URL.
 
 Return ONLY a valid JSON array of all items. No explanation, no markdown, no code block fences." --yolo 2>/dev/null)
 echo "$items" > /tmp/gemini_items.json
@@ -456,8 +461,10 @@ Detect content type from the item's page_url path, title, and tags:
 - No keyword stuffing, no repetition, natural conversational tone
 
 ### Keywords rules
-- Strip # from description hashtags + append grade levels
-- Comma-separated, no spaces within keywords
+- Strip # from description hashtags + append normalized grade codes
+- Normalize grade levels: Preschool → Pre, Kindergarten/KG → KG, Grade 1/1st → 1st, Grade 2/2nd → 2nd, Grade 3/3rd → 3rd, Grade 4/4th → 4th, Grade 5/5th → 5th, Grade 6+ → 6th
+- If worksheet spans multiple grades, include only the lowest and highest code as range endpoints (e.g. Pre,5th — NOT Pre,KG,1st,2nd,3rd,4th,5th)
+- No duplicate keywords. Comma-separated, no spaces after commas. Hashtag-derived keywords lowercase.
 
 ## Input items
 [PASTE CONTENTS OF /tmp/gemini_items.json HERE]
@@ -530,8 +537,8 @@ Display validation summary:
 ```
 
 CSV format:
-- Header: `Title,Media URL,Pinterest board,Thumbnail,Description,Link,Publish date,Keywords`
-- UTF-8 encoding, all values wrapped in double quotes, internal `"` escaped as `""`
+- Header: `Title,Media URL,Pinterest board,Thumbnail,Description,Link,Publish date,Keywords` — written exactly as shown, **no quotes around header values**
+- UTF-8 encoding, all data values wrapped in double quotes, internal `"` escaped as `""`
 - Empty fields = `""` (never omit columns)
 
 **Row counting and auto-split logic — apply for every batch of rows written:**
