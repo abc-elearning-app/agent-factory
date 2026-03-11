@@ -4,19 +4,30 @@ This tool automatically optimizes blog posts for AI search visibility (Google AI
 
 ---
 
+## Quick Install (Mac / Linux)
+
+Open Terminal and run this single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/project/geo-blog-post-optimizer/install-geo-optimizer.sh | bash
+```
+
+The installer guides you through every step interactively — checking prerequisites, downloading the tool, installing dependencies, connecting to Google, and building the link cache. **Estimated time: 5–15 minutes.**
+
+> The only part that cannot be automated is creating your Google Cloud credentials (Step 2 below). The installer will pause and walk you through it when the time comes.
+
+---
+
 ## Table of Contents
 
 1. [What You Need Before Starting](#1-what-you-need-before-starting)
-2. [Step 1 — Install the Tool](#2-step-1--install-the-tool)
-3. [Step 2 — Install Python Dependencies](#3-step-2--install-python-dependencies)
-4. [Step 3 — Set Up Google Cloud (one-time)](#4-step-3--set-up-google-cloud-one-time)
-5. [Step 4 — Authenticate with Google](#5-step-4--authenticate-with-google)
-6. [Step 5 — Set Up Your AI Writer](#6-step-5--set-up-your-ai-writer)
-7. [Step 6 — Get Access to the Google Sheet](#7-step-6--get-access-to-the-google-sheet)
-8. [Step 7 — Build the Internal Link Cache](#8-step-7--build-the-internal-link-cache)
-9. [Running the Optimizer](#9-running-the-optimizer)
-10. [Understanding the Results](#10-understanding-the-results)
-11. [Troubleshooting](#11-troubleshooting)
+2. [Step 1 — Run the Installer](#2-step-1--run-the-installer)
+3. [Step 2 — Set Up Google Cloud (one-time)](#3-step-2--set-up-google-cloud-one-time)
+4. [Step 3 — Set Up Your AI Writer](#4-step-3--set-up-your-ai-writer)
+5. [Step 4 — Get Access to the Google Sheet](#5-step-4--get-access-to-the-google-sheet)
+6. [Running the Optimizer](#6-running-the-optimizer)
+7. [Understanding the Results](#7-understanding-the-results)
+8. [Troubleshooting](#8-troubleshooting)
 
 ---
 
@@ -31,49 +42,45 @@ Make sure you have all of the following before starting:
 | Git | Open Terminal, type `git --version` |
 | A Google account | — |
 | Access to the team Google Sheet | Ask the team lead to share it with you |
-| Either Gemini CLI **or** Claude CLI installed | See Step 5 |
+| Either Gemini CLI **or** Claude CLI installed | See Step 3 |
 
 > **Windows users:** These instructions assume Mac/Linux. On Windows, use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) (Windows Subsystem for Linux) and follow the same steps inside a WSL terminal.
 
 ---
 
-## 2. Step 1 — Install the Tool
+## 2. Step 1 — Run the Installer
 
-Open **Terminal** and run these commands one by one:
+Open **Terminal** and paste this command:
 
 ```bash
-# Download the repository
-git clone https://github.com/abc-elearning-app/agent-factory.git
-
-# Go into the project folder
-cd agent-factory
-
-# Switch to the GEO optimizer branch
-git checkout project/geo-blog-post-optimizer
+curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/project/geo-blog-post-optimizer/install-geo-optimizer.sh | bash
 ```
 
-You should now have a folder called `agent-factory` on your computer. All commands from this point on must be run from inside that folder.
+The installer runs 7 steps automatically:
+
+| Step | What it does |
+|------|-------------|
+| 1 | Checks Python 3.9+, Git, pip3 — prints install hints if anything is missing |
+| 2 | Asks where to install (press Enter to use the default: `~/geo-optimizer`) |
+| 3 | Downloads the tool from GitHub |
+| 4 | Installs all Python packages |
+| 5 | **Pauses here** — guides you to create Google Cloud credentials (see Step 2 below) |
+| 6 | Opens a browser to connect your Google account |
+| 7 | Builds the internal link cache (~24,000 URLs) |
+
+When it finishes, it prints exactly which commands to run next.
+
+> **Re-running the installer is safe.** It updates the code and skips steps already completed (existing credentials, existing cache).
 
 ---
 
-## 3. Step 2 — Install Python Dependencies
-
-Still in Terminal, run:
-
-```bash
-pip3 install google-auth google-auth-httplib2 google-api-python-client \
-             google-auth-oauthlib
-```
-
-Wait for it to finish (usually under a minute). You should see a line like `Successfully installed ...` at the end.
-
----
-
-## 4. Step 3 — Set Up Google Cloud (one-time)
+## 3. Step 2 — Set Up Google Cloud (one-time)
 
 This is the most involved step. You need to create your own Google Cloud project and OAuth credentials. This is free and takes about 10 minutes.
 
-### 4a. Create a Google Cloud Project
+**The installer will pause and wait for you at this step.** Follow the instructions below, then return to the Terminal and press Enter.
+
+### 3a. Create a Google Cloud Project
 
 1. Go to [https://console.cloud.google.com](https://console.cloud.google.com) and sign in with your Google account.
 2. At the top of the page, click the project dropdown (it may say "Select a project").
@@ -81,9 +88,9 @@ This is the most involved step. You need to create your own Google Cloud project
 4. Give it any name (e.g. `geo-optimizer`) and click **Create**.
 5. Make sure your new project is selected in the dropdown before continuing.
 
-### 4b. Enable Required APIs
+### 3b. Enable Required APIs
 
-You need to enable three APIs. For each one, follow these steps:
+You need to enable three APIs. For each one:
 
 1. In the left sidebar, go to **APIs & Services → Library**.
 2. Search for the API name, click it, then click **Enable**.
@@ -93,7 +100,7 @@ Enable these three APIs:
 - **Google Docs API**
 - **Google Drive API**
 
-### 4c. Create OAuth Credentials
+### 3c. Create OAuth Credentials
 
 1. In the left sidebar, go to **APIs & Services → Credentials**.
 2. Click **+ Create Credentials** → **OAuth client ID**.
@@ -101,114 +108,55 @@ Enable these three APIs:
    - Click **Configure Consent Screen**
    - Choose **External** → click **Create**
    - Fill in **App name** (any name, e.g. "GEO Optimizer"), **User support email** (your email), **Developer contact** (your email)
-   - Click **Save and Continue** through all the steps until done
+   - Click **Save and Continue** through all steps until done
    - Go back to **Credentials → + Create Credentials → OAuth client ID**
 4. For **Application type**, choose **Desktop app**.
 5. Give it any name and click **Create**.
-6. A dialog will appear. Click **Download JSON**.
-7. Rename the downloaded file to something simpler like `client_secret.json`.
-8. Move this file into the `agent-factory` folder (the same folder where you cloned the repo).
+6. A dialog will appear — click **Download JSON**.
+7. Rename the downloaded file to `client_secret.json`.
+8. Move it into the install folder (default: `~/geo-optimizer/`).
+
+Once the file is in place, return to the Terminal and press **Enter** — the installer will continue automatically.
 
 ---
 
-## 5. Step 4 — Authenticate with Google
-
-This step connects the tool to your Google account so it can read/write Sheets and Docs.
-
-In Terminal (inside the `agent-factory` folder), run:
-
-```bash
-python3 - <<'EOF'
-from google_auth_oauthlib.flow import InstalledAppFlow
-import pickle, glob, os
-
-# Find your client secret file
-matches = glob.glob("client_secret*.json")
-if not matches:
-    print("ERROR: No client_secret*.json file found in this folder.")
-    print("Make sure you downloaded and moved the file as described in Step 3.")
-    exit(1)
-
-secret_file = matches[0]
-print(f"Using: {secret_file}")
-
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive"
-]
-
-flow = InstalledAppFlow.from_client_secrets_file(secret_file, SCOPES)
-creds = flow.run_local_server(port=0)
-
-with open("oauth_token.pickle", "wb") as f:
-    pickle.dump(creds, f)
-
-print("✅ Authentication successful! oauth_token.pickle saved.")
-EOF
-```
-
-A browser window will open automatically. Sign in with your Google account and click **Allow**. When you see "The authentication flow has completed", return to Terminal.
-
-You should see: `✅ Authentication successful! oauth_token.pickle saved.`
-
-> **Note:** The `oauth_token.pickle` file contains your credentials. Never share this file with anyone.
-
----
-
-## 6. Step 5 — Set Up Your AI Writer
+## 4. Step 3 — Set Up Your AI Writer
 
 The tool supports two AI writers: **Gemini** (free, uses your Google account) and **Claude** (requires Anthropic subscription). You only need one.
 
 ### Option A: Gemini CLI (recommended — free)
 
-1. Install Gemini CLI by following the instructions at: [https://github.com/google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli)
-2. After installing, run `gemini --version` in Terminal to confirm it works.
+1. Install Gemini CLI: [https://github.com/google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli)
+2. Run `gemini --version` in Terminal to confirm it works.
 3. Run `gemini` once and sign in with your Google account when prompted.
 
 ### Option B: Claude CLI
 
-1. Install Claude Code by following: [https://claude.ai/code](https://claude.ai/code)
+1. Install Claude Code: [https://claude.ai/code](https://claude.ai/code)
 2. Sign in with your Anthropic account.
 3. Run `claude --version` in Terminal to confirm it works.
 
-> **Which writer to use?** Check the **Writer** column in the Google Sheet for each row — it will say either `Gemini` or `Claude`. Set up whichever one is assigned to the rows you'll be processing.
+> **Which writer to use?** Check the **Writer** column in the Google Sheet — it will say either `Gemini` or `Claude`. Set up whichever is assigned to your rows.
 
 ---
 
-## 7. Step 6 — Get Access to the Google Sheet
+## 5. Step 4 — Get Access to the Google Sheet
 
-Ask the team lead to share the Google Sheet with your Google account (the same account you used in Step 4) with **Editor** access.
+Ask the team lead to:
+- Share the **Google Sheet** with your Google account (Editor access)
+- Share the **"GEO Optimized Posts"** Google Drive folder with your account
 
-Also ask them to share the **"GEO Optimized Posts"** Google Drive folder with your account so the tool can save the output Docs there.
+Use the same Google account you authenticated with in the installer.
 
 ---
 
-## 8. Step 7 — Build the Internal Link Cache
+## 6. Running the Optimizer
 
-This is a one-time step that downloads all URLs from worksheetzone.org so the tool can add real, verified internal links to each post.
+Once setup is complete, go to your install folder and run:
 
 ```bash
-python3 scripts/build_sitemap_cache.py
+cd ~/geo-optimizer
 ```
-
-This takes about 60 seconds and will print progress as it runs. At the end you should see something like:
-
-```
-✅  Cache saved → scripts/wzorg_link_cache.json
-   Total URLs : 24681
-   blog       : 616
-   worksheet  : 23169
-   ...
-```
-
-> **Re-run this command** whenever new content is published on worksheetzone.org to keep the cache up to date.
-
----
-
-## 9. Running the Optimizer
-
-Once all setup steps are complete, you're ready to run.
 
 ### Basic usage
 
@@ -220,7 +168,6 @@ python3 scripts/run_batch.py
 ### Process a specific number of rows
 
 ```bash
-# Process 50 rows
 python3 scripts/run_batch.py --limit 50
 ```
 
@@ -234,7 +181,7 @@ python3 scripts/run_batch.py --start-row 72 --end-row 150
 ### Test run without writing anything
 
 ```bash
-# Dry run — optimizes posts but does NOT create Docs or update the sheet
+# Optimizes posts but does NOT create Docs or update the sheet
 python3 scripts/run_batch.py --limit 3 --dry-run
 ```
 
@@ -265,7 +212,7 @@ Processing 10 rows this run
 
 ---
 
-## 10. Understanding the Results
+## 7. Understanding the Results
 
 After the tool runs, open the Google Sheet. Each processed row will be updated:
 
@@ -278,7 +225,7 @@ After the tool runs, open the Google Sheet. Each processed row will be updated:
 
 ### What the optimized post contains
 
-Each optimized post is formatted as a ready-to-copy Google Doc with:
+Each optimized post is a ready-to-copy Google Doc with:
 - Original title preserved exactly
 - Rewritten opening paragraph (sapo) — 40–60 words
 - All headings improved to be specific and descriptive
@@ -291,42 +238,37 @@ Each optimized post is formatted as a ready-to-copy Google Doc with:
 
 ---
 
-## 11. Troubleshooting
+## 8. Troubleshooting
 
 | Error message | Cause | Fix |
 |---------------|-------|-----|
-| `oauth_token.pickle not found` | Authentication not completed | Re-run Step 4 |
-| `Token expired` | OAuth token older than ~1 week | Re-run Step 4 |
-| `No client_secret*.json found` | Credentials file missing or misnamed | Re-download from Google Cloud Console, rename to `client_secret.json`, put in project folder |
+| `oauth_token.pickle not found` | Authentication not completed | Re-run the installer |
+| `Token expired` | OAuth token older than ~1 week | See "Refreshing credentials" below |
+| `No client_secret*.json found` | Credentials file missing or misnamed | Re-download from Google Cloud Console, rename to `client_secret.json`, place in install folder |
 | `Gemini error` | Gemini CLI not logged in | Run `gemini` in Terminal and sign in |
 | `Claude error` | Claude CLI not authenticated | Run `claude` in Terminal and sign in |
 | `Fetch failed` | Blog post URL blocked or offline | Row is skipped automatically; check the URL manually |
-| `wzorg_link_cache.json not found` | Cache not built | Run Step 7: `python3 scripts/build_sitemap_cache.py` |
+| `wzorg_link_cache.json not found` | Cache not built | Run: `python3 scripts/build_sitemap_cache.py` |
 | `Doc creator failed` | Docs/Drive API issue | Check [Google Cloud Console](https://console.cloud.google.com) — all three APIs must be enabled |
-| `403 The caller does not have permission` | Drive folder not shared with your account | Ask team lead to share the "GEO Optimized Posts" folder with your Google account |
+| `403 The caller does not have permission` | Drive folder not shared with your account | Ask team lead to share "GEO Optimized Posts" folder with your Google account |
 
 ### Refreshing expired credentials
 
-OAuth tokens expire after about a week. If you see a `Token expired` error, re-run the authentication command from Step 4:
+OAuth tokens expire after about a week. If you see a `Token expired` error, re-run the installer — it will detect the expired token and re-authenticate:
 
 ```bash
-python3 - <<'EOF'
-from google_auth_oauthlib.flow import InstalledAppFlow
-import pickle, glob
+curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/project/geo-blog-post-optimizer/install-geo-optimizer.sh | bash
+```
 
-matches = glob.glob("client_secret*.json")
-secret_file = matches[0]
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/documents",
-    "https://www.googleapis.com/auth/drive"
-]
-flow = InstalledAppFlow.from_client_secrets_file(secret_file, SCOPES)
-creds = flow.run_local_server(port=0)
-with open("oauth_token.pickle", "wb") as f:
-    pickle.dump(creds, f)
-print("✅ Token refreshed.")
-EOF
+Or delete `oauth_token.pickle` from the install folder and re-run the installer.
+
+### Rebuilding the link cache
+
+Run this whenever new content is published on worksheetzone.org:
+
+```bash
+cd ~/geo-optimizer
+python3 scripts/build_sitemap_cache.py
 ```
 
 ---
@@ -334,16 +276,10 @@ EOF
 ## Quick Reference
 
 ```bash
-# --- Setup (run once) ---
-git clone https://github.com/abc-elearning-app/agent-factory.git
-cd agent-factory
-git checkout project/geo-blog-post-optimizer
-pip3 install google-auth google-auth-httplib2 google-api-python-client google-auth-oauthlib
-# → download client_secret.json from Google Cloud → place in this folder
-# → run Step 4 authentication command
-python3 scripts/build_sitemap_cache.py
+# --- Install (run once) ---
+curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/project/geo-blog-post-optimizer/install-geo-optimizer.sh | bash
 
-# --- Daily use ---
+# --- Daily use (from ~/geo-optimizer) ---
 python3 scripts/run_batch.py               # process next 10 rows
 python3 scripts/run_batch.py --limit 50    # process 50 rows
 python3 scripts/run_batch.py --dry-run     # test without writing
