@@ -432,7 +432,7 @@ def process_task(task: dict, csv_writer: "CsvWriter | None",
 
     result = {
         "row": row_num, "board": board, "source_url": source_url,
-        "status": "failed", "csv_path": "", "pins": 0, "error": ""
+        "status": "failed", "csv_path": "", "csv_link": "", "pins": 0, "error": ""
     }
 
     try:
@@ -599,63 +599,64 @@ def main():
     seen = load_seen()
     print(f"\n🔍 Dedup registry: {len(seen)} URLs already seen\n{'─' * 60}")
 
-    # ── CSV state ─────────────────────────────────────────────────────────────
-    today      = str(date.today())
-    base_path  = REPO_ROOT / f"pinterest_pins_{today}"
-    csv_writer = CsvWriter(base_path) if not args.dry_run else None
-
-    # ── Process tasks ─────────────────────────────────────────────────────────
+    # ── Process tasks — per-task CSV writer, upload, and sheet update ─────────
+    today   = str(date.today())
     results = []
+
     for idx, task in enumerate(tasks, start=1):
+        board      = derive_board(task["source_url"], task.get("board_override", ""))
+        board_slug = re.sub(r"[^a-z0-9]+", "_", board.lower()).strip("_")
+        base_path  = REPO_ROOT / f"pinterest_pins_{board_slug}_{today}"
+
         print(f"\n── Task {idx}/{len(tasks)}  Row {task['row']} │ {task['source_url']}")
-        board = derive_board(task["source_url"], task.get("board_override", ""))
         print(f"   Board: {board!r}")
 
+        csv_writer = CsvWriter(base_path) if not args.dry_run else None
         r = process_task(task, csv_writer, seen, dry_run=args.dry_run)
         results.append(r)
         save_seen(seen)
 
-    # ── Upload CSVs + update sheet ────────────────────────────────────────────
-    drive_links: dict[str, str] = {}   # csv_path → drive_link
+        if args.dry_run:
+            continue
 
-    if not args.dry_run:
+        # Close writer and upload + update sheet immediately for this task
         csv_writer.close()
-
-        # Upload each sealed CSV file once
-        all_files = csv_writer.sealed_files
         print(f"\n{'─' * 60}")
-        for csv_path, row_count in all_files:
-            if csv_path.exists() and row_count > 0:
-                try:
-                    print(f"📤 Uploading {csv_path.name} ({row_count} pins)...")
-                    link = upload_csv(csv_path)
-                    drive_links[str(csv_path)] = link
-                    print(f"   ✅ {link}")
-                except Exception as exc:
-                    print(f"   ❌ Upload failed: {exc}")
 
-        # Update sheet rows
-        print()
-        for r in results:
-            if r["status"] == "done":
-                link = drive_links.get(r["csv_path"], "")
-                try:
-                    mark_done(r["row"], r["board"], link, today)
-                    print(f"✅ Row {r['row']} → done  (board: {r['board']!r}, {r['pins']} pins)")
-                except Exception as exc:
-                    print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
-            elif r["status"] == "skipped":
-                try:
-                    mark_done(r["row"], r["board"], "", today)
-                    print(f"✅ Row {r['row']} → done  (board: {r['board']!r}, all items already seen — no new pins)")
-                except Exception as exc:
-                    print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
-            elif r["status"] == "failed":
-                try:
-                    mark_failed(r["row"], today, r["error"])
-                    print(f"❌ Row {r['row']} → failed: {r['error'][:80]}")
-                except Exception as exc:
-                    print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
+        if r["status"] == "done":
+            # Upload each part file and collect links
+            part_links = []
+            for csv_path, row_count in csv_writer.sealed_files:
+                if csv_path.exists() and row_count > 0:
+                    try:
+                        print(f"📤 Uploading {csv_path.name} ({row_count} pins)...")
+                        link = upload_csv(csv_path)
+                        part_links.append(link)
+                        print(f"   ✅ {link}")
+                    except Exception as exc:
+                        print(f"   ❌ Upload failed: {exc}")
+            # Use the first (or only) Drive link for the sheet
+            drive_link = part_links[0] if part_links else ""
+            r["csv_link"] = drive_link
+            try:
+                mark_done(r["row"], r["board"], drive_link, today)
+                print(f"✅ Row {r['row']} → done  (board: {r['board']!r}, {r['pins']} pins)")
+            except Exception as exc:
+                print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
+
+        elif r["status"] == "skipped":
+            try:
+                mark_done(r["row"], r["board"], "", today)
+                print(f"✅ Row {r['row']} → done  (board: {r['board']!r}, all items already seen — no new pins)")
+            except Exception as exc:
+                print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
+
+        elif r["status"] == "failed":
+            try:
+                mark_failed(r["row"], today, r["error"])
+                print(f"❌ Row {r['row']} → failed: {r['error'][:80]}")
+            except Exception as exc:
+                print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
 
     # ── Summary ───────────────────────────────────────────────────────────────
     done_count    = sum(1 for r in results if r["status"] == "done")
@@ -668,12 +669,13 @@ def main():
     print("All done!" if not args.dry_run else "Dry run complete.")
     print()
 
-    if not args.dry_run and drive_links:
-        print("📁 CSV files on Google Drive:")
-        for csv_path, row_count in (csv_writer.sealed_files if csv_writer else []):
-            link = drive_links.get(str(csv_path), "(upload failed)")
-            print(f"   {csv_path.name:<45}  {row_count:>3} pins  → {link}")
-        print()
+    if not args.dry_run:
+        done_results = [r for r in results if r["status"] == "done" and r.get("csv_link")]
+        if done_results:
+            print("📁 CSV files on Google Drive:")
+            for r in done_results:
+                print(f"   {r['board']:<30}  {r['pins']:>3} pins  → {r['csv_link']}")
+            print()
 
     print(f"📌 Total pins     : {total_pins}")
     print(f"🔗 Tasks          : {len(results)} total  "
