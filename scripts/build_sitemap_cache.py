@@ -22,8 +22,9 @@ Sitemap tree:
 
 import json, re, time, urllib.request
 from datetime import date
+from pathlib import Path
 
-CACHE_FILE = "/Users/dangluu/Projects/agent-factory/scripts/wzorg_link_cache.json"
+CACHE_FILE = str(Path(__file__).parent / "wzorg_link_cache.json")
 BASE = "https://worksheetzone.org"
 
 # ── URL type mapping ─────────────────────────────────────────────────────────

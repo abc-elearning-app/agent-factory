@@ -9,9 +9,10 @@ Returns JSON list of {url, title, type, score, matched_on}.
 Zero tokens, instant.
 """
 import sys, json, re, math
+from pathlib import Path
 from collections import Counter
 
-CACHE_FILE = "/Users/dangluu/Projects/agent-factory/scripts/wzorg_link_cache.json"
+CACHE_FILE = Path(__file__).parent / "wzorg_link_cache.json"
 
 STOP_WORDS = {
     "a","an","the","and","or","but","in","on","at","to","for","of","with",
@@ -54,7 +55,7 @@ def build_idf(entries: list) -> dict:
 
 
 def find_links(query: str, exclude_url: str = "", top_n: int = 5) -> list:
-    with open(CACHE_FILE) as f:
+    with open(str(CACHE_FILE)) as f:
         cache = json.load(f)
 
     entries = cache["entries"]
