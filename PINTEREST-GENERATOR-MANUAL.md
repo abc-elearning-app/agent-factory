@@ -243,6 +243,12 @@ python3 scripts/run_pinterest_batch.py --limit 3
 
 # Dry run — fetch and generate but skip CSV write, upload, and sheet update
 python3 scripts/run_pinterest_batch.py --dry-run
+
+# Clear the entire dedup registry, then process all pending tasks
+python3 scripts/run_pinterest_batch.py --reset-registry
+
+# Remove registry entries for one specific listing URL, then process
+python3 scripts/run_pinterest_batch.py --reset-url https://worksheetzone.org/coloring-pages/fruit-coloring-pages/orange
 ```
 
 Sample output:
@@ -343,6 +349,17 @@ The CSV columns match Pinterest's bulk upload format exactly:
 
 The agent keeps a local registry (`pinterest_pins_seen_urls.json`) of every worksheet it has already processed. If you run the same listing URL again, items that were already pinned are automatically skipped. This prevents duplicate pins across multiple sessions.
 
+When all items on a listing page are already in the registry, the row is marked **done** in the sheet automatically (not left as "To Do" indefinitely).
+
+To reset the registry:
+
+| Command | Effect |
+|---|---|
+| `--reset-registry` | Clears the entire registry (all sources) |
+| `--reset-url URL` | Removes only the entries from that specific listing URL |
+
+Use `--reset-url` when you want to re-pin items from one category without affecting other categories. Use `--reset-registry` for a full fresh start.
+
 ---
 
 ## 9. Uploading to Pinterest
@@ -419,9 +436,11 @@ curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/pro
 
 # ── Daily use — terminal script (no Claude Code needed) ───────────────────────
 cd ~/pinterest-generator
-python3 scripts/run_pinterest_batch.py             # process all pending tasks
-python3 scripts/run_pinterest_batch.py --limit 3   # process at most 3 tasks
-python3 scripts/run_pinterest_batch.py --dry-run   # test without writing anything
+python3 scripts/run_pinterest_batch.py                         # process all pending tasks
+python3 scripts/run_pinterest_batch.py --limit 3               # process at most 3 tasks
+python3 scripts/run_pinterest_batch.py --dry-run               # test without writing anything
+python3 scripts/run_pinterest_batch.py --reset-registry        # clear all dedup history, then run
+python3 scripts/run_pinterest_batch.py --reset-url <URL>       # clear history for one URL, then run
 
 # ── Daily use — Claude Code agent (interactive) ───────────────────────────────
 cd ~/pinterest-generator

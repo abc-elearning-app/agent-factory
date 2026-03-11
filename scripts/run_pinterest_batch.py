@@ -8,9 +8,11 @@ writes bulk-upload CSV files (200-row limit, auto-split), uploads each CSV
 to Google Drive, and updates the sheet — all without needing Claude Code.
 
 Usage:
-  python3 scripts/run_pinterest_batch.py             # process all pending tasks
-  python3 scripts/run_pinterest_batch.py --limit 3   # process at most 3 tasks
-  python3 scripts/run_pinterest_batch.py --dry-run   # skip CSV write / upload / sheet update
+  python3 scripts/run_pinterest_batch.py                    # process all pending tasks
+  python3 scripts/run_pinterest_batch.py --limit 3          # process at most 3 tasks
+  python3 scripts/run_pinterest_batch.py --dry-run          # skip CSV write / upload / sheet update
+  python3 scripts/run_pinterest_batch.py --reset-registry   # clear entire dedup registry, then run
+  python3 scripts/run_pinterest_batch.py --reset-url URL    # clear registry entries for one URL, then run
 """
 
 import argparse
@@ -170,13 +172,22 @@ def load_creds():
 
 
 # ── Deduplication registry ─────────────────────────────────────────────────────
-def load_seen() -> set:
-    if SEEN_FILE.exists():
-        return set(json.loads(SEEN_FILE.read_text()))
-    return set()
+def load_seen() -> dict:
+    """Load the dedup registry as {hex_id: source_url}.
 
-def save_seen(seen: set):
-    SEEN_FILE.write_text(json.dumps(sorted(seen), indent=2))
+    Automatically migrates the old flat-list format:
+      ["abc123", ...]  →  {"abc123": "", ...}
+    """
+    if SEEN_FILE.exists():
+        data = json.loads(SEEN_FILE.read_text())
+        if isinstance(data, list):
+            # Migrate old format — source URL unknown for legacy entries
+            return {hex_id: "" for hex_id in data}
+        return data  # Already a dict
+    return {}
+
+def save_seen(seen: dict):
+    SEEN_FILE.write_text(json.dumps(seen, indent=2, sort_keys=True))
 
 
 # ── Gemini CLI wrapper ─────────────────────────────────────────────────────────
@@ -267,7 +278,8 @@ def fetch_thumbnail(page_url: str):
 
 
 # ── Step 2b: Deduplicate ───────────────────────────────────────────────────────
-def dedup(items: list, seen: set) -> tuple:
+def dedup(items: list, seen: dict, source_url: str = "") -> tuple:
+    """Return (clean, dupes). Adds new hex IDs to seen as {hex_id: source_url}."""
     clean, dupes = [], []
     for item in items:
         url   = item.get("page_url", "")
@@ -276,7 +288,7 @@ def dedup(items: list, seen: set) -> tuple:
         if key in seen:
             dupes.append(item.get("title", url))
         else:
-            seen.add(key)
+            seen[key] = source_url
             clean.append(item)
     return clean, dupes
 
@@ -444,7 +456,7 @@ def process_task(task: dict, csv_writer: "CsvWriter | None",
         print(f"  [1/4] ✅ {len(items)} item(s) found")
 
         # Step 2b — dedup
-        clean, dupes = dedup(items, seen)
+        clean, dupes = dedup(items, seen, source_url)
         if dupes:
             print(f"  [2/4] 🔍 {len(clean)} unique, {len(dupes)} duplicate(s) skipped")
         else:
@@ -515,6 +527,10 @@ def main():
                         help="Run without writing CSVs, uploading, or updating the sheet")
     parser.add_argument("--limit", type=int, default=None,
                         help="Maximum number of tasks (sheet rows) to process")
+    parser.add_argument("--reset-registry", action="store_true",
+                        help="Clear the entire dedup registry before running")
+    parser.add_argument("--reset-url", metavar="URL",
+                        help="Remove all registry entries for this source URL before running")
     args = parser.parse_args()
 
     # ── Preflight checks ──────────────────────────────────────────────────────
@@ -541,6 +557,32 @@ def main():
     if args.dry_run: print("  Mode : DRY RUN (no writes)")
     if args.limit:   print(f"  Limit: {args.limit} task(s)")
     print("=" * 60)
+
+    # ── Registry management ───────────────────────────────────────────────────
+    if args.reset_registry:
+        if SEEN_FILE.exists():
+            SEEN_FILE.unlink()
+            print("🗑️  Dedup registry cleared (all entries removed).")
+        else:
+            print("ℹ️  Dedup registry was already empty.")
+        print()
+
+    if args.reset_url:
+        target = args.reset_url.rstrip("/")
+        reg = load_seen()
+        before = len(reg)
+        # Remove entries whose stored source_url matches target
+        reg = {k: v for k, v in reg.items() if v.rstrip("/") != target}
+        removed = before - len(reg)
+        if removed:
+            save_seen(reg)
+            print(f"🗑️  Removed {removed} registry entry(ies) for: {target}")
+        else:
+            print(f"ℹ️  No registry entries found for: {target}")
+            if before > 0:
+                print(f"   (Note: {before} entries exist but may have been migrated from the old "
+                      f"format and lack source URL info. Use --reset-registry to clear all.)")
+        print()
 
     # ── Auth ──────────────────────────────────────────────────────────────────
     try:
@@ -628,6 +670,12 @@ def main():
                 try:
                     mark_done(r["row"], r["board"], link, today)
                     print(f"✅ Row {r['row']} → done  (board: {r['board']!r}, {r['pins']} pins)")
+                except Exception as exc:
+                    print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
+            elif r["status"] == "skipped":
+                try:
+                    mark_done(r["row"], r["board"], "", today)
+                    print(f"✅ Row {r['row']} → done  (board: {r['board']!r}, all items already seen — no new pins)")
                 except Exception as exc:
                     print(f"⚠️  Could not update sheet row {r['row']}: {exc}")
             elif r["status"] == "failed":
