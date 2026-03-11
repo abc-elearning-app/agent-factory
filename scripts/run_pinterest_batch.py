@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import urllib.request
 import warnings
 from datetime import date
 from pathlib import Path
@@ -71,24 +72,7 @@ RULES:
 Return ONLY a valid JSON array. No explanation, no markdown fences.\
 """
 
-# Pass 2: fetch the thumbnail URL from an individual worksheet page.
-THUMBNAIL_PROMPT = """\
-Fetch this page: {page_url}
-
-Find the main thumbnail image URL for this worksheet. Follow these steps in order:
-
-1. Check <script id="__NEXT_DATA__" type="application/json"> — parse the JSON and find the \
-main image URL (look for fields named thumbnail_url, thumbnailUrl, image, src, or similar \
-that point to storage.googleapis.com).
-2. If not found in __NEXT_DATA__, look at <img> tags. The src may be a Next.js proxy URL \
-in the form /_next/image?url=ENCODED_URL&w=...&q=... — URL-decode the value of the url= \
-parameter to get the actual image URL.
-3. The URL must be a direct link starting with https://storage.googleapis.com/worksheetzone/
-4. Preserve the file extension EXACTLY as found (.jpg, .png, .webp, or any other) — \
-do NOT alter or guess it.
-
-Return ONLY the full image URL as a single plain string. No explanation, no markdown, no extra text.\
-"""
+# Pass 2: thumbnail URLs are extracted with a direct HTTP fetch — no Gemini needed.
 
 METADATA_PROMPT = """\
 You are a Pinterest copy specialist. Generate optimized Pinterest metadata for each item below.
@@ -245,15 +229,39 @@ def fetch_items(url: str) -> list:
 
 # ── Step 2c: Fetch thumbnail from each child page (Pass 2) ────────────────────
 def fetch_thumbnail(page_url: str):
-    """Visit the individual worksheet page and extract its thumbnail URL directly."""
+    """Extract thumbnail URL directly from the child page HTML — no Gemini needed.
+
+    Reads __NEXT_DATA__ JSON first (most reliable), then falls back to a
+    regex scan of the raw HTML. Preserves the file extension exactly as found.
+    Completes in under 1 second — no LLM timeout risk.
+    """
     try:
-        raw = gemini_run(THUMBNAIL_PROMPT.format(page_url=page_url), timeout=120)
-        # Gemini may prepend an explanation line — scan all lines for the actual URL
-        for line in raw.strip().splitlines():
-            line = line.strip()
-            if line.startswith("https://storage.googleapis.com/worksheetzone/"):
-                return line
-        return None
+        req = urllib.request.Request(
+            page_url, headers={"User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)"}
+        )
+        html = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", errors="ignore")
+
+        # Step A: parse __NEXT_DATA__ JSON — contains raw GCS URLs with correct extension
+        m = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            html, re.DOTALL
+        )
+        if m:
+            txt = json.dumps(json.loads(m.group(1)))
+            urls = re.findall(
+                r'https://storage\.googleapis\.com/worksheetzone/image/[^"]+thumbnail\.[a-z]+',
+                txt
+            )
+            if urls:
+                return urls[0]
+
+        # Step B: fallback — scan raw HTML for any GCS thumbnail URL
+        urls = re.findall(
+            r'https://storage\.googleapis\.com/worksheetzone/image/[^"&\s]+thumbnail\.[a-z]+',
+            html
+        )
+        return urls[0] if urls else None
+
     except Exception:
         return None
 

@@ -422,12 +422,16 @@ If all items are duplicates:
 
 ### Step 2c — Fetch thumbnail URL from each child page (Pass 2)
 
-For every deduplicated item, fetch its individual worksheet page and extract the thumbnail URL directly from that page. This is the authoritative source — no guessing, no constructing from slugs.
+For every deduplicated item, make a direct HTTP request to the individual worksheet page and extract the thumbnail URL from the page HTML. **No Gemini is used here** — this is pure Python, completes in under 1 second per page, and has no timeout risk.
+
+The lookup strategy:
+1. **Step A** — parse the `__NEXT_DATA__` JSON embedded in the page (most reliable: contains raw GCS URLs with the exact extension)
+2. **Step B** — fallback: regex scan the raw HTML for any `storage.googleapis.com/worksheetzone/...thumbnail.{ext}` URL
 
 Run via `Bash`:
 ```bash
 python3 << 'PYEOF'
-import json, subprocess, sys
+import json, re, urllib.request
 
 with open('/tmp/gemini_items.json') as f:
     items = json.load(f)
@@ -438,42 +442,45 @@ failed = []
 
 for i, item in enumerate(items, 1):
     page_url = item.get('page_url', '')
-    print(f"  [{i}/{total}] Fetching thumbnail from: {page_url}", flush=True)
+    print(f"  [{i}/{total}] {page_url}", flush=True)
 
-    prompt = f"""Fetch this page: {page_url}
-
-Find the main thumbnail image URL for this worksheet. Follow these steps in order:
-
-1. Check <script id="__NEXT_DATA__" type="application/json"> — parse the JSON and find the main image URL (look for fields named thumbnail_url, thumbnailUrl, image, src, or similar that point to storage.googleapis.com).
-2. If not found in __NEXT_DATA__, look at <img> tags. The src may be a Next.js proxy URL in the form /_next/image?url=ENCODED_URL&w=...&q=... — URL-decode the value of the url= parameter to get the actual image URL.
-3. The URL must be a direct link starting with https://storage.googleapis.com/worksheetzone/
-4. Preserve the file extension EXACTLY as found (.jpg, .png, .webp, or any other) — do NOT alter or guess it.
-
-Return ONLY the full image URL as a single plain string. No explanation, no markdown, no extra text."""
-
+    thumb = None
     try:
-        result = subprocess.run(
-            ['gemini', '-p', prompt, '--yolo'],
-            capture_output=True, text=True, timeout=120
+        req = urllib.request.Request(
+            page_url, headers={"User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)"}
         )
-        # Gemini often prepends an explanation line before the URL — scan all lines
-        url = ''
-        for line in result.stdout.strip().splitlines():
-            line = line.strip()
-            if line.startswith('https://storage.googleapis.com/worksheetzone/'):
-                url = line
-                break
-        if url:
-            item['thumbnail_url'] = url
-            print(f"         ✅ {url}", flush=True)
-        else:
-            item['thumbnail_url'] = None
-            failed.append(item.get('title', page_url))
-            print(f"         ❌ No valid URL in response", flush=True)
-    except subprocess.TimeoutExpired:
-        item['thumbnail_url'] = None
+        html = urllib.request.urlopen(req, timeout=15).read().decode("utf-8", errors="ignore")
+
+        # Step A: __NEXT_DATA__ JSON
+        m = re.search(
+            r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>',
+            html, re.DOTALL
+        )
+        if m:
+            txt = json.dumps(json.loads(m.group(1)))
+            urls = re.findall(
+                r'https://storage\.googleapis\.com/worksheetzone/image/[^"]+thumbnail\.[a-z]+', txt
+            )
+            if urls:
+                thumb = urls[0]
+
+        # Step B: fallback — raw HTML scan
+        if not thumb:
+            urls = re.findall(
+                r'https://storage\.googleapis\.com/worksheetzone/image/[^"&\s]+thumbnail\.[a-z]+', html
+            )
+            if urls:
+                thumb = urls[0]
+
+    except Exception as e:
+        print(f"         ❌ Error: {e}", flush=True)
+
+    item['thumbnail_url'] = thumb
+    if thumb:
+        print(f"         ✅ {thumb}", flush=True)
+    else:
         failed.append(item.get('title', page_url))
-        print(f"         ❌ Timeout fetching {page_url}", flush=True)
+        print(f"         ❌ Not found", flush=True)
 
     enriched.append(item)
 
@@ -487,11 +494,10 @@ PYEOF
 
 Report after thumbnail fetching:
 ```
-🖼️  Thumbnails fetched: 13/14
-   ❌ Could not find thumbnail for: "Orange with Stem Coloring Page"
+🖼️  Thumbnails fetched: 14/14
 ```
 
-If any items have `thumbnail_url = null`, warn the user — those rows will be skipped from the CSV during Step 4 validation (missing Media URL is a hard error). Ask the user whether to continue without those items or stop.
+If any items have `thumbnail_url = null`, those rows are skipped from the CSV during Step 4 validation. Report them and continue — do not stop the batch.
 
 ### Step 3 — Generate optimized metadata via Gemini CLI
 
