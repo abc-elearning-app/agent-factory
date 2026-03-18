@@ -1,6 +1,13 @@
 # GEO Blog Post Optimizer — Complete Setup & Usage Manual
 
-This tool automatically optimizes blog posts for AI search visibility (Google AI Overviews, ChatGPT, Perplexity). It reads a Google Sheet, rewrites each post using Gemini or Claude, creates a formatted Google Doc, and writes the result back to the sheet.
+This tool automatically optimizes blog posts for AI search visibility (Google AI Overviews, ChatGPT, Perplexity) and generates schema markup. It reads a Google Sheet, rewrites each post using Gemini or Claude, creates formatted Google Docs, and writes the results back to the sheet.
+
+Two independent pipelines share the same sheet and scripts folder:
+
+| Pipeline | Trigger column | What it does |
+|----------|---------------|-------------|
+| **GEO Optimizer** | `Status = "optimize"` | Rewrites post content, creates Optimized Doc |
+| **Schema Generator** | `Schema Status = "Generate Schema"` | Scans live post, generates missing JSON-LD, creates Schema Doc |
 
 ---
 
@@ -25,9 +32,10 @@ The installer guides you through every step interactively — checking prerequis
 3. [Step 2 — Set Up Google Cloud (one-time)](#3-step-2--set-up-google-cloud-one-time)
 4. [Step 3 — Set Up Your AI Writer](#4-step-3--set-up-your-ai-writer)
 5. [Step 4 — Get Access to the Google Sheet](#5-step-4--get-access-to-the-google-sheet)
-6. [Running the Optimizer](#6-running-the-optimizer)
-7. [Understanding the Results](#7-understanding-the-results)
-8. [Troubleshooting](#8-troubleshooting)
+6. [Running the GEO Optimizer](#6-running-the-geo-optimizer)
+7. [Running the Schema Generator](#7-running-the-schema-generator)
+8. [Understanding the Results](#8-understanding-the-results)
+9. [Troubleshooting](#9-troubleshooting)
 
 ---
 
@@ -150,7 +158,7 @@ Use the same Google account you authenticated with in the installer.
 
 ---
 
-## 6. Running the Optimizer
+## 6. Running the GEO Optimizer
 
 Once setup is complete, go to your install folder and run:
 
@@ -187,6 +195,102 @@ python3 scripts/run_batch.py --limit 3 --dry-run
 
 > **Recommended pace:** Process 50–80 rows per week to avoid triggering Google's spam filters.
 
+---
+
+## 7. Running the Schema Generator
+
+The schema generator is a **separate pipeline** that runs independently from the GEO optimizer. It reads rows where **Schema Status (column H) = "Generate Schema"**, inspects each live blog post for existing JSON-LD schema already injected by WordPress, and generates only the missing entities.
+
+### What it generates
+
+| Schema entity | When added |
+|---------------|-----------|
+| `BreadcrumbList` | Always (if not already present) |
+| `FAQPage` | Only if the post has a FAQ section |
+| `ItemList` | Only if the post is a listicle (e.g. "45 Activities for Kids") |
+
+Base entities (`Organization`, `WebSite`, `WebPage`, `Person`, `BlogPosting`) are already handled by WordPress — the tool never duplicates them.
+
+### How to trigger it
+
+In the Google Sheet, set column H (**Schema Status**) to `Generate Schema` for any row you want processed. Then run:
+
+```bash
+cd ~/geo-optimizer
+
+# Process the next 10 rows with Schema Status = "Generate Schema"
+bash scripts/run_schema_batch.sh
+
+# Process a specific number of rows
+bash scripts/run_schema_batch.sh --limit 5
+
+# Process a specific row range
+bash scripts/run_schema_batch.sh --start-row 2 --end-row 20
+
+# Test run — generates docs but does NOT update the sheet
+bash scripts/run_schema_batch.sh --dry-run
+```
+
+### What you'll see while it runs
+
+```
+============================================================
+Schema Generator
+  Limit     : 10 rows
+============================================================
+Reading sheet for schema rows ...
+Found 4 rows with Schema Status='Generate Schema'
+Processing 1 rows this run
+
+── Row 2  [1/1]  https://worksheetzone.org/blog/enrichment-activities-for-kids
+  [1/2] Generating schema for https://worksheetzone.org/blog/enrichment-activities-for-kids
+    [schema] Found: BlogPosting, ImageObject, Organization, Person, WebPage, WebSite
+    [schema] Article type : listicle
+    [schema] FAQ pairs    : 4
+    [schema] Listicle items: 10
+    [schema] Missing types: BreadcrumbList, FAQPage, ItemList
+    [schema] Doc: https://docs.google.com/document/d/...
+  [2/2] ✅ Sheet updated
+
+============================================================
+Schema batch complete
+  ✅ Succeeded : 1
+  ❌ Failed    : 0
+```
+
+### What the schema doc contains
+
+Each schema Google Doc is an audit report with three sections:
+
+```
+Schema Markup Audit
+URL: https://worksheetzone.org/blog/...
+Date: 2026-03-18
+Article type: listicle
+
+━━━ Already Present in WordPress ━━━
+  ✅ BlogPosting
+  ✅ Organization
+  ✅ Person
+  ✅ WebPage
+  ✅ WebSite
+
+━━━ Missing — Added Below ━━━
+  ➕ BreadcrumbList
+  ➕ FAQPage (4 Q&A pairs)
+  ➕ ItemList
+
+━━━ Paste This Into Your WordPress Page ━━━
+
+<script type="application/ld+json">
+{ ... }
+</script>
+```
+
+Copy the `<script>` block and paste it into the WordPress page's custom HTML or theme header for that post.
+
+> **The two pipelines are independent.** A row can have `Status = "optimize"` and `Schema Status = "Generate Schema"` at the same time. Run them in any order.
+
 ### What you'll see while it runs
 
 ```
@@ -212,16 +316,25 @@ Processing 10 rows this run
 
 ---
 
-## 7. Understanding the Results
+## 8. Understanding the Results
 
 After the tool runs, open the Google Sheet. Each processed row will be updated:
 
+### GEO Optimizer columns (A–G)
+
 | Column | What it shows |
 |--------|--------------|
-| **Status** | `Done ✅` if successful, `Failed ❌` if something went wrong |
-| **Optimized Doc** | Link to the Google Doc with the optimized post |
-| **Fail Reason** | If status is `Failed ❌`, this explains what went wrong |
-| **Processed Date** | The date the row was processed |
+| **B — Status** | `Done ✅` if successful, `Failed ❌` if something went wrong |
+| **D — Optimized Doc** | Link to the Google Doc with the optimized post |
+| **E — Fail Reason** | If status is `Failed ❌`, this explains what went wrong |
+| **F — Processed Date** | The date the row was processed |
+
+### Schema Generator columns (H–I)
+
+| Column | What it shows |
+|--------|--------------|
+| **H — Schema Status** | Set to `Generate Schema` to trigger; updated to `Done ✅` or `Failed ❌` after processing |
+| **I — Schema file** | Link to the Google Doc with the schema audit and `<script>` block to paste into WordPress |
 
 ### What the optimized post contains
 
@@ -238,7 +351,7 @@ Each optimized post is a ready-to-copy Google Doc with:
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Error message | Cause | Fix |
 |---------------|-------|-----|
@@ -251,6 +364,8 @@ Each optimized post is a ready-to-copy Google Doc with:
 | `wzorg_link_cache.json not found` | Cache not built | Run: `python3 scripts/build_sitemap_cache.py` |
 | `Doc creator failed` | Docs/Drive API issue | Check [Google Cloud Console](https://console.cloud.google.com) — all three APIs must be enabled |
 | `403 The caller does not have permission` | Drive folder not shared with your account | Ask team lead to share "GEO Optimized Posts" folder with your Google account |
+| `Schema generator failed` | Error in `create_schema_doc.py` | Run `python3 scripts/create_schema_doc.py --url <url> --title "<title>" --folder-id <id>` directly for the full traceback |
+| `wzorg_schema_config.json not found` | Static schema config missing | File must exist at `scripts/wzorg_schema_config.json` — re-clone the repo or restore from git |
 
 ### Auto-refresh (no action needed)
 
@@ -275,12 +390,19 @@ curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/pro
 # --- Install (run once) ---
 curl -fsSL https://raw.githubusercontent.com/abc-elearning-app/agent-factory/project/geo-blog-post-optimizer/install-geo-optimizer.sh | bash
 
-# --- Daily use (from ~/geo-optimizer) ---
+# --- GEO Optimizer (from ~/geo-optimizer) ---
+# Trigger: Status column = "optimize"
 python3 scripts/run_batch.py               # process next 10 rows
 python3 scripts/run_batch.py --limit 50    # process 50 rows
 python3 scripts/run_batch.py --dry-run     # test without writing
+
+# --- Schema Generator (from ~/geo-optimizer) ---
+# Trigger: Schema Status column = "Generate Schema"
+bash scripts/run_schema_batch.sh           # process next 10 rows
+bash scripts/run_schema_batch.sh --limit 5
+bash scripts/run_schema_batch.sh --dry-run # test without writing
 ```
 
 ---
 
-*Questions? Contact the team lead or refer to `agents/geo-blog-post-optimizer.md` in the repository for the full technical reference.*
+*Questions? Contact the team lead or refer to `agents/geo-blog-post-optimizer.md` and `agents/geo-schema-generator.md` in the repository for the full technical reference.*
