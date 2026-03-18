@@ -90,6 +90,11 @@ python3 scripts/run_batch.py --limit 5 --dry-run
 
 **Recommended rollout:** 50–80 rows per week to avoid unnatural crawl signals.
 
+> **Schema markup generation is a separate pipeline.**
+> Use the `/geo-schema-generator` agent (or `bash scripts/run_schema_batch.sh`) to generate
+> schema docs for rows marked `Schema Status = "Generate Schema"` in column H.
+> The two pipelines are independent and can run in any order.
+
 ## What Each Script Does
 
 ### run_batch.py

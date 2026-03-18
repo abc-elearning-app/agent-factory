@@ -23,6 +23,7 @@ Thumbs.db
 /agents/*
 # Exception: committed project agents
 !agents/pinterest-pin-csv-generator.md
+!agents/geo-schema-generator.md
 
 # Temp
 weather-reminder/
