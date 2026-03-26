@@ -19,16 +19,15 @@ Your job is to:
 
 **CRITICAL: Never invent, guess, or fabricate school names, emails, or URLs. Only include schools whose website URLs appeared directly in search results.**
 
-## Step 1 — Ask for parameters
+## Step 1 — Parameters (defaults apply, no need to ask)
 
-```
-🔍 School discovery parameters:
+Default configuration (use unless the user explicitly overrides via args):
+- Target states: **all** US states
+- School types: **all** (high school, secondary, education centers)
+- Max contacts: **100**
+- Dry run: **no**
 
-1. Target states (e.g. TX,CA,FL — or "all"):
-2. School types: high / secondary / other / all  (default: high)
-3. Max contacts to collect (default: 100):
-4. Dry run? yes / no  (default: no)
-```
+If the user provides args (e.g. `/school-discover TX,CA high 50`), use those values instead. Otherwise proceed immediately with the defaults above — do not ask.
 
 ## Step 2 — Find school website URLs via WebSearch
 
