@@ -84,16 +84,35 @@ def main():
     creds = load_creds()
     svc   = build("sheets", "v4", credentials=creds)
 
-    # Check if header row exists
+    # Read all existing data to check headers and collect known emails
     existing = svc.spreadsheets().values().get(
-        spreadsheetId=SHEET_ID, range="A1:M1"
+        spreadsheetId=SHEET_ID, range="A:E"
     ).execute().get("values", [])
 
     rows_to_write = []
     if not existing or existing[0][0] != "School Name":
         rows_to_write.append(HEADERS)
+        known_emails = set()
+    else:
+        # Column E (index 4) is Email — collect all existing emails (skip header)
+        known_emails = {
+            row[4].strip().lower()
+            for row in existing[1:]
+            if len(row) > 4 and row[4].strip()
+        }
 
+    if known_emails:
+        print(f"  Sheet has {len(known_emails)} existing email(s) — skipping duplicates",
+              file=sys.stderr)
+
+    skipped = 0
     for r in records:
+        email = r.get("email", "").strip().lower()
+        if email in known_emails:
+            print(f"  ⏭  Skipping duplicate: {email}", file=sys.stderr)
+            skipped += 1
+            continue
+        known_emails.add(email)  # prevent duplicates within this batch too
         rows_to_write.append([
             r.get("school_name", ""),
             r.get("school_type", ""),
@@ -110,6 +129,11 @@ def main():
             r.get("notes", ""),  # M — Notes
         ])
 
+    if not rows_to_write or rows_to_write == [HEADERS]:
+        print(f"✅ Nothing new to append  ({skipped} duplicate(s) skipped)")
+        print(f"   https://docs.google.com/spreadsheets/d/{SHEET_ID}")
+        return
+
     svc.spreadsheets().values().append(
         spreadsheetId=SHEET_ID,
         range="A1",
@@ -118,8 +142,8 @@ def main():
         body={"values": rows_to_write}
     ).execute()
 
-    data_rows = len(rows_to_write) - (1 if rows_to_write[0] == HEADERS else 0)
-    print(f"✅ Appended {data_rows} contacts to sheet")
+    data_rows = len(rows_to_write) - (1 if rows_to_write and rows_to_write[0] == HEADERS else 0)
+    print(f"✅ Appended {data_rows} new contact(s) to sheet  ({skipped} duplicate(s) skipped)")
     print(f"   https://docs.google.com/spreadsheets/d/{SHEET_ID}")
 
 
