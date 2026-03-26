@@ -6,10 +6,10 @@ Discover contact emails for US secondary schools, high schools, and education ce
 
 ## How It Works
 
-| Phase | Command | What it does |
-|-------|---------|-------------|
-| 1 | `/school-discover` | Uses web search to find school websites, scrapes contact pages for real emails, writes verified contacts to your Google Sheet |
-| 2 | `/school-send` | Reads rows you marked "To send" in the sheet and sends your email template via Gmail |
+| Phase | Script | What it does |
+|-------|--------|-------------|
+| 1 — Discover | `bash run-discover.sh` | Searches the web for school websites, scrapes contact pages for real emails, writes verified contacts to your Google Sheet |
+| 2 — Send | `bash run-send.sh` | Reads rows you marked "To send" in the sheet and sends your email template via Gmail |
 
 **No LLM is involved in email extraction** — all contact data comes from real HTTP requests to school websites.
 
@@ -55,37 +55,40 @@ Your Address (required by CAN-SPAM)
 To unsubscribe, reply with "unsubscribe" in the subject.
 ```
 
-### 2. Run the AI agent
-
-Open Gemini CLI or Claude Code from the install directory:
-
-```bash
-cd ~/school-outreach
-gemini   # or: claude
-```
+Variables are substituted automatically per recipient when the email is sent.
 
 ---
 
 ## Phase 1 — Discover Contacts
 
-Run `/school-discover` in the AI chat. The agent will ask:
+### Run
 
-```
-🔍 School discovery parameters:
-1. Target states (e.g. TX,CA,FL — or "all"):
-2. School types: high / secondary / other / all  (default: high)
-3. Max contacts to collect (default: 100):
-4. Dry run? yes / no  (default: no)
+```bash
+cd ~/school-outreach
+bash run-discover.sh
 ```
 
-**What happens:**
-1. Agent uses web search to find 20–50 school websites per state
-2. Python script visits each school's contact pages (`/contact`, `/about`, `/staff`, etc.)
-3. Extracts emails matching `.edu`, `.org`, `.us`, `.gov`, `k12.*.us` domains
-4. Filters out noreply/webmaster/privacy addresses
-5. Writes verified contacts to your Google Sheet (appends new rows each run)
+This launches the AI agent in fully autonomous mode. No prompts or approvals — it runs start to finish and writes results directly to your Google Sheet.
 
-**Each row in the sheet:**
+### What happens
+
+1. Agent searches the web for real school website URLs across all US states
+2. Python script visits each school's contact pages (`/contact`, `/about/contact`, `/staff`, `/administration`, etc.)
+3. Extracts emails matching `.edu`, `.org`, `.us`, `.gov`, `k12.*.us` domains using regex
+4. Filters out noreply, webmaster, and privacy addresses
+5. Skips any email already in the sheet (deduplication — safe to run daily)
+6. Writes up to 100 new verified contacts to your Google Sheet
+
+### Default parameters (no input needed)
+
+| Parameter | Default |
+|-----------|---------|
+| Target states | All US states |
+| School types | All (high school, secondary, education centers) |
+| Max contacts per run | 100 |
+| Dry run | No |
+
+### Sheet columns
 
 | Column | Contents |
 |--------|----------|
@@ -98,7 +101,7 @@ Run `/school-discover` in the AI chat. The agent will ask:
 | G | Website |
 | H | Source URL |
 | I | Discovered At |
-| J | Email Sent (TRUE/FALSE) |
+| J | Email Sent (TRUE / FALSE) |
 | K | Sent At |
 | L | **Sending Status** ← you fill this |
 | M | Notes |
@@ -109,24 +112,61 @@ Run `/school-discover` in the AI chat. The agent will ask:
 
 ### Step 1: Mark rows in the sheet
 
-Open your Google Sheet. For each row you want to email, type **`To send`** in column L (Sending Status). Leave blank to skip.
+Open your Google Sheet. For each row you want to email, type **`To send`** in column L (Sending Status). Leave column L blank for rows you want to skip.
 
-### Step 2: Run `/school-send`
+### Step 2: Run the send script
 
-The agent previews the first rendered email and asks for confirmation before sending.
+**Send to all rows marked "To send":**
+```bash
+cd ~/school-outreach
+bash run-send.sh
+```
 
-**The script automatically:**
-- Sends only rows where column L = "To send"
-- Skips rows where Email Sent = TRUE (safety guard against re-sending)
+**Send to only the first N rows marked "To send":**
+```bash
+bash run-send.sh --limit 10    # process 10 rows
+bash run-send.sh --limit 50    # process 50 rows
+```
+
+Use `--limit` when you want to pace your outreach across multiple sessions (e.g. 50 emails/day).
+
+### What happens automatically
+
+- Loads only rows where column L = `"To send"`
+- Skips any row where column J = `TRUE` (already sent — safety guard against re-sending)
+- Substitutes `{school_name}`, `{school_type}`, `{city}`, `{state}` into your template per recipient
+- Shows a preview of the first rendered email before sending
 - Waits 2 seconds between emails
-- Pauses 30 seconds every 50 emails (Gmail rate limit)
-- Updates Email Sent = TRUE, Sent At timestamp, and clears Sending Status after each send
+- Pauses 30 seconds every 50 emails (Gmail rate limit protection)
+- After each send: sets column J → `TRUE`, sets column K → timestamp, clears column L
 
 ---
 
-## Day-to-Day Usage
+## Day-to-Day Workflow
 
-Each `/school-discover` run **appends new rows** to the same sheet — previous runs are identifiable by the "Discovered At" timestamp. You can run discovery daily and accumulate contacts over time.
+```
+Day 1:  bash run-discover.sh          → 100 new contacts in sheet
+Day 2:  bash run-discover.sh          → more new contacts appended (no duplicates)
+        [open sheet, mark rows "To send" in column L]
+        bash run-send.sh --limit 50   → send to first 50
+Day 3:  bash run-send.sh --limit 50   → send to next 50
+        bash run-discover.sh          → discover more
+```
+
+Each discovery run appends new rows — previous rows stay intact and are identifiable by their "Discovered At" timestamp. The same email is never written to the sheet twice.
+
+---
+
+## Deduplication
+
+The system prevents duplicates at every layer:
+
+| Layer | Where | What it catches |
+|-------|-------|-----------------|
+| Within a scrape run | `run_school_discover.py` | Same email from multiple schools in one session |
+| Within an incoming batch | `append_school_contacts.py` | Duplicates in the same batch being written |
+| Cross-run | `append_school_contacts.py` | Emails already in the sheet from previous runs |
+| Send-time | `send_school_emails.py` | Rows already marked `Email Sent = TRUE` |
 
 ---
 
@@ -138,8 +178,8 @@ Each `/school-discover` run **appends new rows** to the same sheet — previous 
 | `SCHOOL_OUTREACH_SHEET_ID not set` | Check `school_outreach_config.env` — paste your sheet ID |
 | `requests not installed` | Run `pip3 install requests` |
 | `Token has been expired or revoked` | Delete `oauth_token.pickle` and re-run installer to re-auth |
-| 0 contacts found | Try different states or broader school types |
-| 0 rows marked "To send" | Open sheet, type "To send" in column L, then run `/school-send` again |
+| 0 contacts found | Run again — web search results vary per session |
+| 0 rows marked "To send" | Open sheet, type "To send" in column L, then re-run |
 | Gmail daily limit (500/day) | Stop sending, note the count, resume next session |
 
 ---
@@ -149,17 +189,17 @@ Each `/school-discover` run **appends new rows** to the same sheet — previous 
 `school_outreach_config.env` (in your install directory):
 
 ```
-SCHOOL_OUTREACH_SHEET_ID=1AbCxyz...   ← from your Sheet URL
+SCHOOL_OUTREACH_SHEET_ID=1AbCxyz...   ← the ID from your Google Sheet URL
 GMAIL_USER=you@gmail.com              ← must match your OAuth account
 ```
 
-Never commit this file — it is gitignored.
+The Sheet ID is the long string between `/d/` and `/edit` in your Sheet URL. This file is gitignored — never committed.
 
 ---
 
 ## Re-authentication
 
-If your OAuth token expires or you need to re-auth:
+If your OAuth token expires or you need to add Gmail scope:
 
 ```bash
 cd ~/school-outreach
@@ -171,21 +211,24 @@ python3 scripts/reauth_with_gmail.py
 ## Files
 
 ```
-install-school-outreach.sh       ← installer
+run-discover.sh                  ← Phase 1 entry point (bash run-discover.sh)
+run-send.sh                      ← Phase 2 entry point (bash run-send.sh [--limit N])
+install-school-outreach.sh       ← one-command installer
+SCHOOL-OUTREACH-MANUAL.md        ← this file
 agents/
-  school-discover.md             ← /school-discover agent
-  school-send.md                 ← /school-send agent
+  school-discover.md             ← /school-discover AI agent definition
+  school-send.md                 ← /school-send AI agent definition
 scripts/
-  run_school_discover.py         ← Phase 1 entry point
-  extract_school_emails.py       ← HTTP scraper (no LLM)
-  send_school_emails.py          ← Gmail API sender
-  append_school_contacts.py      ← writes to Google Sheet
-  read_school_contacts.py        ← reads "To send" rows
-  mark_school_sent.py            ← updates sent status
-  load_email_template.py         ← validates template file
-  reauth_with_gmail.py           ← re-auth OAuth
+  run_school_discover.py         ← Phase 1 orchestrator
+  extract_school_emails.py       ← HTTP scraper — no LLM, regex only
+  send_school_emails.py          ← Gmail API sender (supports --limit N)
+  append_school_contacts.py      ← writes to Google Sheet, deduplicates
+  read_school_contacts.py        ← reads "To send" rows from sheet
+  mark_school_sent.py            ← updates sent status per row
+  load_email_template.py         ← validates template file format
+  reauth_with_gmail.py           ← re-auth OAuth with Gmail scope
 email_template.example.txt       ← template format reference
-email_template.txt               ← your actual template (edit this)
-school_outreach_config.env       ← your Sheet ID + Gmail (gitignored)
+email_template.txt               ← your actual template (edit this, gitignored)
+school_outreach_config.env       ← your Sheet ID + Gmail address (gitignored)
 oauth_token.pickle               ← OAuth credentials (gitignored)
 ```
