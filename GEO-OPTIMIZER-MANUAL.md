@@ -346,8 +346,22 @@ Each optimized post is a ready-to-copy Google Doc with:
 - Bullet/numbered lists where appropriate
 - A comparison table (if the post covers multiple categories)
 - Exactly 4 FAQ pairs at the end
-- 3–4 verified internal links to worksheetzone.org pages
+- 3–5 verified internal links to worksheetzone.org pages (selected via per-section TF-IDF relevance scoring with 5-check placement validation)
 - Proper heading styles (H1/H2/H3) and table borders — ready to paste into WordPress
+
+### How internal links are selected
+
+The batch pipeline automatically finds and validates internal links before the AI writer rewrites the post:
+
+1. **Per-section queries** — the post title and up to 6 H2 headings are each used as separate TF-IDF queries against the ~33,000-URL Worksheetzone link cache.
+2. **Deduplication and cap** — results are deduplicated and capped at 20 candidates total, then passed to the AI writer as a ranked list.
+3. **5-check validation** — the AI writer accepts a candidate link only if it passes all five checks:
+   - **Subject + grade match** — same educational silo as the post
+   - **No-Reach Rule** — a broad anchor ("activities") cannot point to a narrow page (e.g. `/blog/100th-day-of-school-ideas`)
+   - **Intent match** — `tool` type for "maker/generator/builder"; `worksheet` type for "worksheets/printables"; `blog` type for informational phrases
+   - **Semantic Substitution Test** — replacing the anchor text with the page's noun-entity must not break the sentence meaning
+   - **3-word context check** — surrounding words must be instructional, not conversational
+4. **1% doubt rule** — if the writer is even 1% unsure, the candidate is skipped. Accuracy over density.
 
 ---
 
