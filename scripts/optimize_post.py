@@ -87,15 +87,51 @@ FORMATTING RULES:
 
 # ── Prompt builder ────────────────────────────────────────────────────────────
 
-def build_prompt(content: str, post_url: str) -> str:
-    # 1. Find verified internal links
+def build_link_candidates(content: str, post_url: str) -> str:
+    """
+    Run one find_links query per H2 section heading (plus the post title),
+    collect unique candidates, and return a structured block for the prompt.
+
+    Each candidate line includes type + score + matched_on so the AI can
+    apply the No-Reach Rule, intent-type matching, and the 1% doubt rule.
+    """
     title_match = re.search(r"^#\s+(.+)", content, re.MULTILINE)
     headings    = re.findall(r"^##\s+(.+)", content, re.MULTILINE)
-    query_parts = ([title_match.group(1)] if title_match else []) + headings[:3]
-    query       = " ".join(query_parts)
 
-    links = find_links(query, exclude_url=post_url, top_n=5)
-    links_text = "\n".join(f"- [{l['title']}]({l['url']})" for l in links)
+    queries = []
+    if title_match:
+        queries.append(title_match.group(1).strip())
+    queries.extend(h.strip() for h in headings[:6])   # up to 6 H2 sections
+
+    seen_urls  = {post_url}
+    candidates = []
+
+    for q in queries:
+        try:
+            results = find_links(q, exclude_url=post_url, top_n=8)
+            for r in results:
+                if r["url"] not in seen_urls:
+                    seen_urls.add(r["url"])
+                    candidates.append(r)
+        except Exception:
+            pass
+
+    if not candidates:
+        return "(no candidates found)"
+
+    lines = []
+    for c in candidates[:20]:   # hard cap: 20 candidates total
+        matched = ",".join(c.get("matched_on", []))
+        lines.append(
+            f"- type:{c['type']} score:{c['score']} "
+            f"[{c['title']}]({c['url']}) matched:{matched}"
+        )
+    return "\n".join(lines)
+
+
+def build_prompt(content: str, post_url: str) -> str:
+    # 1. Find verified internal links (per-section queries)
+    links_block = build_link_candidates(content, post_url)
 
     # 2. Pick rotating expertise phrases
     phrase_a, phrase_b = pick_expertise_phrases()
@@ -110,12 +146,13 @@ CRITICAL OUTPUT RULES:
 3. For Rule 9 (expertise signals), insert these two sentences exactly as written, placed naturally in two separate body sections — do not cluster them together:
    Sentence A: "{phrase_a}"
    Sentence B: "{phrase_b}"
-4. For Rule 10 (internal links), you MUST ONLY use URLs from the VERIFIED LIST below. Do not invent, guess, or modify any URL. Insert fewer links rather than force an unnatural one.
+4. For Rule 10 (internal links), you MUST ONLY use URLs from the VERIFIED CANDIDATES below. Do not invent, guess, or modify any URL. Insert fewer links rather than force an unnatural one.
 
 {FORMAT_CONTRACT}
 
-VERIFIED INTERNAL LINKS (use only these):
-{links_text}
+VERIFIED INTERNAL LINK CANDIDATES (use only these for Rule 10):
+Each line: type:<intent> score:<relevance> [Title](URL) matched:<keywords>
+{links_block}
 
 GEO OPTIMIZATION RULES:
 Rule 1 - Sapo: Rewrite the opening paragraph only if needed so it answers the title in sentence 1, contains an explicit "X is..." definition, names the target audience, is 40-60 words, and does not open with meta-commentary. Leave unchanged if it already passes all five.
@@ -127,7 +164,13 @@ Rule 6 - Inline lists to structured lists: Convert sentences packing 3 or more i
 Rule 7 - Comparison table: Add a markdown table only if the post covers multiple categories AND no table already exists. Max 3-5 columns.
 Rule 8 - FAQ: If no FAQ exists, append exactly 4 Q&A pairs as specified in the OUTPUT STRUCTURE above. If FAQ exists, audit: adjust answers outside 40-80 words; do not replace existing questions.
 Rule 9 - Expertise signals: Insert the two sentences provided above (Sentence A and Sentence B) into separate body sections where they fit naturally.
-Rule 10 - Internal links: Insert 3-4 verified internal links from the list above. Anchor text must describe the linked page. Hard cap: 4 new links. Never modify existing links.
+Rule 10 - Internal links: From VERIFIED CANDIDATES above, embed 3-5 links in paragraph/body text only — never inside headings. Apply all of these checks before placing each link:
+  a) Intent match: type:tool → anchor must contain "maker/generator/builder/creator"; type:worksheet or type:category → anchor must be "worksheets/printables/resources"; type:blog → anchor must be an informational phrase ("tips/strategies/how to/ideas")
+  b) No-Reach Rule: never link a broad anchor to a narrow URL. Invalid: "activities" → /blog/100th-day-of-school-ideas. Valid: "activities" → /worksheets or /blog/ela-activities
+  c) Semantic fit: replace the anchor mentally with its definition — if the sentence breaks, reject the link
+  d) Context check: 3 words before and after must be instructional (practice/students/use/try/download). Reject if context is conversational (however/also/by the way)
+  e) 1% doubt rule: any uncertainty → skip. Accuracy is 100x more important than density
+  Hard cap: 5 new links. Never modify or remove existing links.
 
 ORIGINAL POST:
 {content}"""
